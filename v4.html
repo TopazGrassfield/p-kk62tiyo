@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#07080c">
-<title>LB v4.2 · 방향 입력 던지기 + 착지 원 + 빨간 연쇄 + 강화 연출</title>
+<title>LB v4.3 · 방향 입력 던지기 + 착지 원 + 빨간 연쇄 + 몸체 강화 효과 + 던전 바닥</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#07080c;color:#fff;overscroll-behavior:none;touch-action:none;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
@@ -102,6 +102,23 @@ const TUNE3={
   HILITE_DELAY_MS:110,            // 멈춘 뒤 강조까지
   // 재질 색은 DIE_FS 셰이더 안 IVORY / GOLD / PIP 상수
 };
+// ================= v4.3 상수 (던전 바닥 + 몸체 중심 강화 효과) =================
+const TUNE43={
+  // 던전 (월드 단위: 주사위 1 = 1)
+  WALL_K:[-0.4,0.34], WALL_H:1.2, BRICK:[0.62,0.30], // 옆벽 = 화면 왼쪽 끝 기준 안쪽(−)/바깥(+) 거리, 뒷벽 = 카메라 거리 × 비율, 벽 높이, 벽돌 길이·높이
+  TEX:1024, FLOOR_TILE:7, FLOOR_BUMP:9.0,   // 바닥 텍스처 크기(시작 시 1번 생성), 반복 간격, 요철 세기
+  TORCH_Y:1.5, TORCH_ZK:0.42, TORCH_I:9.0, TORCH_DIE:1.0, // 횃불 높이, 앞뒤 위치(뒷벽 거리 비율), 세기(바닥·벽), 주사위에 닿는 횃불빛
+  AMB:0.24, SPOT:0.8,                       // 차가운 환경광, 가운데 위쪽 빛(결과 주사위가 잘 보이게)
+  ROCKS:[16,14,10], PEBBLES:70,             // 돌멩이 (옆벽 밑·뒷벽 밑·오른쪽 가장자리), 잔돌
+  MOTES:90, MAX_PT:900,                     // 공중 먼지 개수, 효과 입자 상한
+  DUST_HOP:9, DUST_LAND:18, DUST_KEEP:5,    // 튕길 때 / 강화 착지 / 유지 착지 먼지 덩어리 수
+  // 강화 (몸체 중심)
+  GLOW:1.0, KEEP:0.5, FLASH_MS:280,         // 몸체 빛 세기, "유지"일 때 배율, 착지 뒤 빛이 빠지는 시간
+  CH_N:3, TRAIL_N:3,                        // 충전 중 빨려 드는 빛 조각, 회전 중 꼬리 입자 (프레임당)
+  SPARK_N:64, SPARK_KEEP:12,                // 착지 폭발 입자 수 (강화 / 유지)
+  SHELL_MS:380, SHELL_R:[0.55,2.6],         // 구형 충격파 길이, 반지름 (시작 → 끝)
+};
+let P3=[],SH3=[],MOTES=[],PTA=null;
 let USE3D=false,gl=null,glc=null,G3=null,tray=0,trayT=0,gtime=0,dice3=[],seq3=null,VP=null,camE=[0,12,6],camC=[0,0,0];
 window.__v3={log:[],frames:[]};
 
@@ -128,7 +145,7 @@ function topFace(q){let best=0,bv=-9;for(const k in FACE_N){const y=qRot(q,FACE_
 // ---------- 셰이더 ----------
 const DIE_VS=`attribute vec3 aP;attribute vec3 aN;uniform mat4 uVP,uM;varying vec3 vOP,vON,vWP;
 void main(){vOP=aP;vON=aN;vec4 w=uM*vec4(aP,1.0);vWP=w.xyz;gl_Position=uVP*w;}`;
-const DIE_FS=`precision highp float;varying vec3 vOP,vON,vWP;uniform mat4 uM;uniform vec3 uCam;uniform float uGold,uDim,uHi,uTime,uRed;
+const DIE_FS=`precision highp float;varying vec3 vOP,vON,vWP;uniform mat4 uM;uniform vec3 uCam;uniform float uGold,uDim,uHi,uTime,uRed,uUp,uFl,uTD;uniform vec3 uTorch;
 const float PI=3.14159265;
 const vec3 IVORY=vec3(0.80,0.71,0.53);   // 상아색 레진 (선형)
 const vec3 GOLD=vec3(1.0,0.72,0.30);     // 금 F0
@@ -167,6 +184,7 @@ void main(){vec3 p=vOP,a=abs(p),n=normalize(vON);float val;vec2 uv;vec3 tu,tv;
  vec3 col=shade(N,V,normalize(KEY),vec3(3.1,2.9,2.6),alb,F0,ar,0.35);
  col+=shade(N,V,normalize(vec3(0.8,0.4,-0.4)),vec3(0.45,0.55,0.75),alb,F0,ar,0.5);
  col+=shade(N,V,normalize(vec3(0.1,0.35,-1.0)),vec3(0.9,0.85,0.8),alb,F0,ar,0.0);
+ vec3 LT=uTorch-vWP;col+=shade(N,V,normalize(LT),vec3(1.0,0.56,0.24)*uFl*uTD/(1.0+0.09*dot(LT,LT)),alb,F0,ar,0.3); // v4.3 횃불빛
  vec3 R=reflect(-V,N);float nv=max(dot(N,V),0.0);vec3 Fe=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-nv,5.0);
  col+=env(R)*Fe*(1.0-0.5*rough);
  col+=alb*mix(vec3(0.02,0.025,0.025),vec3(0.13,0.13,0.14),N.y*0.5+0.5);
@@ -176,13 +194,44 @@ void main(){vec3 p=vOP,a=abs(p),n=normalize(vON);float val;vec2 uv;vec3 tu,tv;
  col*=(1.0-rim*0.55)*(1.0-edge*0.45)*mix(1.0,0.55+0.45*t,pip);
  col+=mix(vec3(3.2,1.8,0.45),vec3(1.6,0.75,0.08),uRed)*pip*uGold*(0.85+0.15*sin(uTime*7.0));   // 치명: 금빛 눈 (빨간 주사위는 덜 하얗게 타도록 낮춤)
  col+=mix(vec3(0.35,0.62,1.0)*pow(1.0-nv,3.0)*1.3,vec3(1.0,0.95,0.93)*pow(1.0-nv,5.0)*0.75,uRed)*uHi; // 성공: 테두리 빛 (빨간 주사위는 가는 흰 빛)
+ vec3 ua=abs(vOP);float med=max(min(ua.x,ua.y),min(max(ua.x,ua.y),ua.z)),bord=smoothstep(0.34,0.49,med);   // 면 테두리(모서리 쪽)
+ col+=vec3(0.20,1.0,0.72)*uUp*(1.0-pip)*(1.4*pow(1.0-nv,2.2)+1.6*bord+2.0*smoothstep(0.03,0.2,edge)+0.08); // v4.3 강화: 모서리·면 테두리를 따라 차오르는 초록·청록 빛 (눈은 가리지 않음)
  float l=dot(col,vec3(0.3,0.59,0.11));col=mix(col,mix(vec3(l),vec3(l)*RUST,uRed),uDim*0.85)*mix(1.0,mix(0.10,0.30,uRed),uDim); // 실패: 회색(상아) / 어두운 적갈색(빨강)
  col=(col*(2.51*col+0.03))/(col*(2.43*col+0.59)+0.14);gl_FragColor=vec4(pow(clamp(col,0.0,1.0),vec3(0.4545)),1.0);}`;
 const FLOOR_VS=`attribute vec2 aQ;uniform mat4 uVP;uniform float uS;varying vec2 vXZ;void main(){vXZ=aQ*uS;gl_Position=uVP*vec4(vXZ.x,0.0,vXZ.y,1.0);}`;
-const FLOOR_FS=`precision mediump float;varying vec2 vXZ;uniform sampler2D uTex;uniform float uA;uniform vec2 uC;
-void main(){float f=texture2D(uTex,vXZ*0.22).r,g=texture2D(uTex,vXZ*0.05+0.37).r;
- vec3 base=vec3(0.040,0.066,0.060)*(0.55+0.9*f)*(0.8+0.4*g);float d=length(vXZ-uC);float spot=exp(-d*d/32.0);
- vec3 col=base*(0.22+2.4*spot)*vec3(1.05,1.0,0.92);col=pow(col,vec3(0.4545));gl_FragColor=vec4(col*uA,uA);}`;
+// v4.3 던전 돌바닥: 색(uTex) + 높이(uHt) 텍스처, 높이 차로 요철 노멀 → 횃불(따뜻)·환경광(차가움)·위쪽 빛
+const FLOOR_FS=`precision highp float;varying vec2 vXZ;uniform sampler2D uTex,uHt;uniform float uA,uFl,uTile,uBump,uTI,uAmb,uSpot,uTexel;uniform vec2 uC,uWall;uniform vec3 uTorch;
+void main(){vec2 uv=vXZ/uTile;vec3 al=texture2D(uTex,uv).rgb;
+ float h=texture2D(uHt,uv).r,hx=texture2D(uHt,uv+vec2(uTexel,0.0)).r,hz=texture2D(uHt,uv+vec2(0.0,uTexel)).r;
+ vec3 N=normalize(vec3((h-hx)*uBump,1.0,(h-hz)*uBump)),alb=al*al,P=vec3(vXZ.x,0.0,vXZ.y),Lt=uTorch-P;float dt=length(Lt);Lt/=dt;
+ vec3 col=alb*vec3(0.30,0.38,0.52)*uAmb*(0.55+0.45*h);
+ col+=alb*vec3(1.0,0.56,0.24)*uFl*uTI*max(dot(N,Lt),0.0)/(1.0+0.09*dt*dt);
+ float d=length(vXZ-uC);col+=alb*vec3(1.0,0.95,0.86)*uSpot*exp(-d*d/26.0)*max(dot(N,normalize(vec3(-0.25,1.0,0.35))),0.0);
+ float ds=vXZ.x-uWall.x,db=vXZ.y-uWall.y;col*=(0.28+0.72*smoothstep(0.0,1.2,ds))*(0.28+0.72*smoothstep(0.0,1.2,db)); // 벽 밑 어둡게
+ if(ds<0.0||db<0.0)col*=0.2;
+ col=pow(col,vec3(0.4545));gl_FragColor=vec4(col*uA,uA);}`;
+// v4.3 벽돌·돌멩이 (합친 메시 1개, 꼭짓점 색)
+const ENV_VS=`attribute vec3 aP;attribute vec3 aN;attribute vec3 aC;attribute vec2 aF;uniform mat4 uVP;uniform vec2 uWall;varying vec3 vP,vN,vC;
+void main(){vP=aP+vec3(aF.x*uWall.x,0.0,aF.y*uWall.y);vN=aN;vC=aC;gl_Position=uVP*vec4(vP,1.0);}`;
+const ENV_FS=`precision highp float;varying vec3 vP,vN,vC;uniform sampler2D uTex;uniform float uA,uFl,uTI,uAmb,uSpot;uniform vec2 uC,uWall;uniform vec3 uTorch;
+void main(){if(vP.x<uWall.x-0.56||vP.z<uWall.y-0.56)discard;   // 두 벽이 만나는 모서리 바깥은 버림
+ vec3 N=normalize(vN);vec2 t=abs(N.y)>0.6?vP.xz:(abs(N.x)>0.6?vP.zy:vP.xy);
+ float g=dot(texture2D(uTex,t*0.23).rgb,vec3(0.333));vec3 alb=vC*vC*(0.45+1.6*g),Lt=uTorch-vP;float dt=length(Lt);Lt/=dt;
+ vec3 col=alb*vec3(0.30,0.38,0.52)*uAmb*(0.6+0.4*N.y);
+ col+=alb*vec3(1.0,0.56,0.24)*uFl*uTI*max(dot(N,Lt),0.0)/(1.0+0.09*dt*dt);
+ float d=length(vP.xz-uC);col+=alb*vec3(1.0,0.95,0.86)*uSpot*exp(-d*d/26.0)*max(dot(N,normalize(vec3(-0.25,1.0,0.35))),0.0);
+ col*=0.35+0.65*smoothstep(0.0,0.55,vP.y);   // 바닥과 만나는 곳 어둡게
+ col=pow(col,vec3(0.4545));gl_FragColor=vec4(col*uA,uA);}`;
+// v4.3 효과 입자(점): 크기 음수 = 더하기(빛), 양수 = 덮기(먼지)
+const PT_VS=`attribute vec3 aP;attribute vec4 aC;attribute float aS;uniform mat4 uVP;uniform float uK;varying vec4 vC;varying float vAdd;
+void main(){gl_Position=uVP*vec4(aP,1.0);gl_PointSize=clamp(abs(aS)*uK/gl_Position.w,1.0,200.0);vC=aC;vAdd=aS<0.0?1.0:0.0;}`;
+const PT_FS=`precision mediump float;varying vec4 vC;varying float vAdd;
+void main(){vec2 q=gl_PointCoord*2.0-1.0;float r=dot(q,q);if(r>1.0)discard;float f=mix((1.0-r)*(1.0-r),exp(-r*4.0),vAdd),a=vC.a*f;gl_FragColor=vec4(vC.rgb*a,a*(1.0-vAdd));}`;
+// v4.3 구형 충격파: 주사위 중심에서 퍼지는 껍질 (가장자리만 빛남, 바닥 아래는 버림)
+const SH_VS=`attribute vec3 aP;uniform mat4 uVP;uniform vec4 uS;varying vec3 vW,vN;void main(){vN=aP;vW=uS.xyz+aP*uS.w;gl_Position=uVP*vec4(vW,1.0);}`;
+const SH_FS=`precision mediump float;varying vec3 vW,vN;uniform vec3 uCam,uCol;uniform float uA,uT;
+void main(){if(vW.y<0.01)discard;vec3 N=normalize(vN);float f=pow(1.0-abs(dot(N,normalize(uCam-vW))),2.2);
+ float band=0.7+0.3*sin(N.y*16.0-uT*38.0+atan(N.z,N.x)*3.0);float a=f*band*uA;gl_FragColor=vec4(uCol*a,0.0);}`;
 const BLOB_VS=`attribute vec2 aQ;uniform mat4 uVP;uniform vec4 uB;varying vec2 vQ;void main(){vQ=aQ;gl_Position=uVP*vec4(uB.x+aQ.x*uB.z,uB.w,uB.y+aQ.y*uB.z,1.0);}`;
 const BLOB_FS=`precision mediump float;varying vec2 vQ;uniform vec4 uCol;uniform float uSharp;
 void main(){float r=length(vQ);float a=exp(-r*r*uSharp)*(1.0-smoothstep(0.8,1.0,r))*uCol.a;gl_FragColor=vec4(uCol.rgb*a,a);}`;
@@ -208,6 +257,77 @@ function feltCanvas(){const S=256,c=document.createElement('canvas');c.width=c.h
   for(let i=0;i<14;i++){const px=Math.random()*S,py=Math.random()*S,rr=20+Math.random()*60,g=Math.random()<0.5?255:0;
     for(const ox of [-S,0,S])for(const oy of [-S,0,S]){const gr=x.createRadialGradient(px+ox,py+oy,0,px+ox,py+oy,rr);gr.addColorStop(0,`rgba(${g},${g},${g},0.10)`);gr.addColorStop(1,`rgba(${g},${g},${g},0)`);x.fillStyle=gr;x.fillRect(px+ox-rr,py+oy-rr,rr*2,rr*2);}}
   return c;}
+// v4.3 던전 돌바닥 텍스처 (시작 시 1번): 불규칙한 판석 + 어두운 줄눈 + 금·마모·얼룩·이끼. 가장자리가 이어지게 9번 겹쳐 그림
+function stoneTex(S){const T=S/1024,ca=document.createElement('canvas'),ch=document.createElement('canvas');ca.width=ca.height=ch.width=ch.height=S;
+  const a=ca.getContext('2d'),h=ch.getContext('2d');a.fillStyle='#1a1712';a.fillRect(0,0,S,S);h.fillStyle='#000';h.fillRect(0,0,S,S);
+  const path=(c,pts,ox,oy)=>{c.beginPath();c.moveTo(pts[0][0]+ox,pts[0][1]+oy);for(let i=1;i<pts.length;i++)c.lineTo(pts[i][0]+ox,pts[i][1]+oy);c.closePath();};
+  const line=(c,L,ox,oy)=>{c.beginPath();c.moveTo(L[0][0]+ox,L[0][1]+oy);for(let i=1;i<L.length;i++)c.lineTo(L[i][0]+ox,L[i][1]+oy);c.stroke();};
+  const gv=v=>`rgb(${v|0},${v|0},${v|0})`;let y=0;
+  while(y<S-1){let rh=rnd(110,200)*T;if(S-y-rh<100*T)rh=S-y;const off=Math.random()*S;let x=0;
+    while(x<S-1){let w=rnd(120,280)*T;if(S-x-w<100*T)w=S-x;
+      const X=x+off,g=rnd(4,8)*T,j=()=>rnd(-10,10)*T,m=()=>rnd(-5,5)*T;
+      const pts=[[X+g+j(),y+g+j()],[X+w*0.5+j(),y+g+m()],[X+w-g+j(),y+g+j()],[X+w-g+m(),y+rh*0.5+j()],[X+w-g+j(),y+rh-g+j()],[X+w*0.5+j(),y+rh-g+m()],[X+g+j(),y+rh-g+j()],[X+g+m(),y+rh*0.5+j()]];
+      const L=rnd(70,108),t=Math.random(),col=t<0.5?[L,L*0.96,L*0.9]:t<0.8?[L*1.04,L*0.92,L*0.8]:[L*0.88,L*0.94,L*1.0],hb=rnd(0.7,0.9)*255,cr=[];
+      if(Math.random()<0.45){let px=X+w*rnd(0.2,0.8),py=y+rh*rnd(0.2,0.8),an=rnd(0,6.28);const L2=[[px,py]];
+        for(let k=0,n=3+(Math.random()*4|0);k<n;k++){an+=rnd(-0.9,0.9);const l=rnd(12,30)*T;px+=Math.cos(an)*l;py+=Math.sin(an)*l;L2.push([px,py]);}cr.push(L2);}
+      for(const ox of [-S,0,S])for(const oy of [-S,0,S]){
+        if(X+w+ox<-40||X+ox>S+40||y+rh+oy<-40||y+oy>S+40)continue;
+        path(a,pts,ox,oy);a.fillStyle=`rgb(${col.map(v=>v|0)})`;a.fill();
+        a.save();path(a,pts,ox,oy);a.clip();a.lineWidth=12*T;a.strokeStyle='rgba(0,0,0,.32)';path(a,pts,ox,oy);a.stroke();
+        a.lineWidth=1.6*T;a.strokeStyle='rgba(10,8,6,.7)';for(const L2 of cr)line(a,L2,ox,oy);a.restore();
+        path(h,pts,ox,oy);h.fillStyle=gv(hb);h.fill();h.save();path(h,pts,ox,oy);h.clip();
+        for(const [lw,k] of [[30,0.9],[18,0.75],[9,0.55]]){h.lineWidth=lw*T;h.strokeStyle=gv(hb*k);path(h,pts,ox,oy);h.stroke();}  // 모서리 마모(둥근 턱)
+        h.lineWidth=3*T;h.strokeStyle=gv(hb*0.35);for(const L2 of cr)line(h,L2,ox,oy);h.restore();}
+      x+=w;}
+    y+=rh;}
+  const ia=a.getImageData(0,0,S,S),ih=h.getImageData(0,0,S,S),A=ia.data,Hd=ih.data,NN=S*S,R=Math.max(1,Math.round(3*T));
+  let hv=new Float32Array(NN),tmp=new Float32Array(NN);for(let i=0;i<NN;i++)hv[i]=Hd[i*4];
+  const blur=(src,dst,hz)=>{for(let l=0;l<S;l++){let s=0;const at=k=>hz?src[l*S+k]:src[k*S+l];for(let k=-R;k<=R;k++)s+=at((k+S)%S);
+    for(let m2=0;m2<S;m2++){dst[hz?l*S+m2:m2*S+l]=s/(2*R+1);s+=at((m2+R+1)%S)-at((m2-R+S)%S);}}};
+  blur(hv,tmp,true);blur(tmp,hv,false);
+  const mkN=c=>{const gg=new Float32Array(c*c);for(let i=0;i<c*c;i++)gg[i]=Math.random();
+    return(u,v)=>{const fx=u*c,fy=v*c,ix=Math.floor(fx),iy=Math.floor(fy),tx=fx-ix,ty=fy-iy,sx=tx*tx*(3-2*tx),sy=ty*ty*(3-2*ty),x0=ix%c,y0=iy%c,x1=(x0+1)%c,y1=(y0+1)%c;
+      const p=gg[y0*c+x0]+(gg[y0*c+x1]-gg[y0*c+x0])*sx,q=gg[y1*c+x0]+(gg[y1*c+x1]-gg[y1*c+x0])*sx;return p+(q-p)*sy;};};
+  const n1=mkN(6),n2=mkN(24),n3=mkN(10),n4=mkN(64);
+  for(let yy=0;yy<S;yy++)for(let xx=0;xx<S;xx++){const i=yy*S+xx,u=xx/S,v=yy/S,N1=n1(u,v),N2=n2(u,v),N3=n3(u,v),N4=n4(u,v),gr=Math.random();
+    let hh=hv[i];const st=hh>20;hh+=st?(N2-0.5)*40+(N4-0.5)*26+(gr-0.5)*10:(gr-0.5)*8;hh=clamp(hh,0,255);
+    Hd[i*4]=Hd[i*4+1]=Hd[i*4+2]=hh;
+    let k=(0.78+0.44*N1)*(0.88+0.24*N4)+(gr-0.5)*0.12;if(N3>0.66)k*=1-(N3-0.66)*1.5;            // 얼룩
+    let r=A[i*4]*k,g=A[i*4+1]*k,b=A[i*4+2]*k;
+    const ed=st?clamp(1-hh/170,0,1):1,ms=clamp((N1*0.6+N2*0.4-0.56)*4,0,1)*ed*0.85;      // 이끼: 줄눈 가까이
+    r+=(46-r)*ms;g+=(64-g)*ms;b+=(30-b)*ms;A[i*4]=r;A[i*4+1]=g;A[i*4+2]=b;}
+  a.putImageData(ia,0,0);h.putImageData(ih,0,0);return{a:ca,h:ch};}
+// v4.3 벽돌 벽(뒤·왼쪽) + 무너진 벽돌 + 로우폴리 돌멩이 → 메시 1개로 합침 (꼭짓점: 위치3·노멀3·색3·이동표시2)
+//   이동표시 F: 실제 위치 = 위치 + (F.x × 옆벽 x, 0, F.y × 뒷벽 z). 주사위 수(카메라 거리)가 바뀌면 벽·돌이 화면 가장자리를 따라감
+function envMesh(){const T=TUNE43,V=[],I=[],BL=T.BRICK[0],BH=T.BRICK[1],gap=0.035,rows=Math.round(T.WALL_H/BH);let F=[0,0];
+  const quad=(p4,n,col)=>{const o=V.length/11;for(const p of p4)V.push(p[0],p[1],p[2],n[0],n[1],n[2],col[0],col[1],col[2],F[0],F[1]);I.push(o,o+1,o+2,o,o+2,o+3);};
+  const box=(cx,cz,y0,y1,hx,hz,yaw,col)=>{const c=Math.cos(yaw),s=Math.sin(yaw),P=(x,y,z)=>[cx+x*c-z*s,y,cz+x*s+z*c],Rn=n=>[n[0]*c-n[2]*s,n[1],n[0]*s+n[2]*c];
+    const a=P(-hx,y0,-hz),b=P(hx,y0,-hz),e=P(hx,y0,hz),f=P(-hx,y0,hz),A=P(-hx,y1,-hz),B=P(hx,y1,-hz),E=P(hx,y1,hz),Fp=P(-hx,y1,hz);
+    quad([A,B,E,Fp],[0,1,0],col.map(v=>v*1.08));quad([a,b,B,A],Rn([0,0,-1]),col);quad([b,e,E,B],Rn([1,0,0]),col);quad([e,f,Fp,E],Rn([0,0,1]),col);quad([f,a,A,Fp],Rn([-1,0,0]),col);};
+  const bc=()=>{const L=rnd(0.36,0.54),t=Math.random();return t<0.6?[L,L*0.95,L*0.88]:t<0.85?[L*1.05,L*0.92,L*0.78]:[L*0.85,L*0.9,L*0.95];};
+  const run=(place)=>{for(let r=0;r<rows;r++){let a=-14-(r%2)*BL*0.5-rnd(0,0.1);const top=r===rows-1;
+    while(a<14){const l=BL*rnd(0.8,1.2);if(!(top&&Math.random()<0.28))place(a+l/2,(l-gap)/2,r*BH+gap/2,(r+1)*BH-gap/2-(top?rnd(0,0.12):0),rnd(-0.035,0.03),bc());a+=l;}}};
+  const MO=[0.11,0.10,0.09];                                       // 줄눈(벽돌 뒤 어두운 회반죽)
+  F=[0,1];box(0,-0.3,0,rows*BH-0.06,14,0.22,0,MO);run((m,hh,y0,y1,pz,col)=>box(m,-0.25+pz,y0,y1,hh,0.25,0,col));        // 뒷벽 (앞면 z = 0 → 뒷벽 z)
+  F=[1,0];box(-0.3,0,0,rows*BH-0.06,0.22,14,0,MO);run((m,hh,y0,y1,pz,col)=>box(-0.25+pz,m,y0,y1,0.25,hh,0,col));        // 왼쪽 벽 (안쪽 면 x = 0 → 옆벽 x)
+  F=[1,T.TORCH_ZK];box(0.12,0,0.82,T.TORCH_Y-0.08,0.03,0.03,0,[0.22,0.15,0.09]);box(0.06,0,0.9,0.98,0.06,0.025,0,[0.2,0.18,0.16]);   // 횃불 자루·걸쇠
+  F=[0,1];for(let i=0;i<7;i++){F=[rnd(-0.9,0.9),1];box(0,rnd(0.35,1.0),0,rnd(0.13,0.22),BL*0.45,0.13,rnd(-0.6,0.6),bc());}  // 무너진 벽돌
+  const t5=(1+Math.sqrt(5))/2,IV=[[-1,t5,0],[1,t5,0],[-1,-t5,0],[1,-t5,0],[0,-1,t5],[0,1,t5],[0,-1,-t5],[0,1,-t5],[t5,0,-1],[t5,0,1],[-t5,0,-1],[-t5,0,1]].map(vnorm),
+    IF=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  const rock=(x,z,s)=>{const yaw=rnd(0,6.28),sq=rnd(0.5,0.85),cy0=s*0.28,L=rnd(0.3,0.5),col=[L,L*0.96,L*0.9];
+    const vs=IV.map(p=>{const k=s*rnd(0.72,1.18),xx=p[0]*k,zz=p[2]*k;return[x+xx*Math.cos(yaw)-zz*Math.sin(yaw),cy0+p[1]*k*sq,z+xx*Math.sin(yaw)+zz*Math.cos(yaw)];});
+    for(const [i0,i1,i2] of IF){let n=vnorm(vcross(vsub(vs[i1],vs[i0]),vsub(vs[i2],vs[i0])));const fc=[0,1,2].map(c=>(vs[i0][c]+vs[i1][c]+vs[i2][c])/3);
+      if(vdot(n,vsub(fc,[x,cy0,z]))<0)n=n.map(v=>-v);const o=V.length/11,cc=col.map(v=>v*rnd(0.88,1.1));
+      for(const p of [vs[i0],vs[i1],vs[i2]])V.push(p[0],p[1],p[2],n[0],n[1],n[2],cc[0],cc[1],cc[2],F[0],F[1]);I.push(o,o+1,o+2);}};
+  // 돌멩이는 가장자리(벽 밑·오른쪽 끝)에만: 주사위가 멈추는 자리와 굴러오는 길은 비움
+  const side=(s0,s1)=>{const s=rnd(s0,s1);F=[1,rnd(-1.25,0.97)];rock(rnd(s*0.7,Math.max(s*0.7+0.02,0.5)),rnd(-0.2,0.2),s);},
+        back=(s0,s1)=>{const s=rnd(s0,s1);F=[rnd(-1.1,0.95),1];rock(rnd(-0.2,0.2),rnd(s*0.7,Math.max(s*0.7+0.02,0.85)),s);},
+        right=(s0,s1)=>{const s=rnd(s0,s1);F=[-1,rnd(-1.25,0.9)];rock(rnd(-0.2,1.3),rnd(-0.2,0.2),s);};
+  for(let i=0;i<T.ROCKS[0];i++)side(0.1,0.32);for(let i=0;i<T.ROCKS[1];i++)back(0.1,0.36);for(let i=0;i<T.ROCKS[2];i++)right(0.08,0.28);
+  for(let i=0;i<T.PEBBLES;i++)[side,back,right][i%3](0.03,0.075);
+  return{V:new Float32Array(V),I:new Uint16Array(I)};}
+function sphereMesh(a,b){const V=[],I=[];for(let j=0;j<=b;j++){const th=Math.PI*j/b;for(let i=0;i<=a;i++){const ph=Math.PI*2*i/a;V.push(Math.sin(th)*Math.cos(ph),Math.cos(th),Math.sin(th)*Math.sin(ph));}}
+  for(let j=0;j<b;j++)for(let i=0;i<a;i++){const p=j*(a+1)+i;I.push(p,p+a+1,p+1,p+1,p+a+1,p+a+2);}return{V:new Float32Array(V),I:new Uint16Array(I)};}
 
 function init3D(){try{
   glc=document.getElementById('gl');gl=glc.getContext('webgl',{antialias:true,alpha:true,premultipliedAlpha:true,powerPreference:'high-performance'});
@@ -216,9 +336,20 @@ function init3D(){try{
   const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.V,gl.STATIC_DRAW);
   const ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,m.I,gl.STATIC_DRAW);
   const qb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,qb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
-  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,feltCanvas());
-  gl.generateMipmap(gl.TEXTURE_2D);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
-  G3={m,die,floor,blob,vb,ib,qb,tex,n:m.I.length};
+  // v4.3: 던전 바닥 텍스처(색·높이)는 시작할 때 한 번만 만든다
+  const tt0=performance.now(),ST=stoneTex(TUNE43.TEX);window.__v43={texMs:Math.round(performance.now()-tt0)};
+  const mkT=src=>{const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src);
+    gl.generateMipmap(gl.TEXTURE_2D);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);return t;};
+  const tex=mkT(ST.a),htex=mkT(ST.h);window.__stone2d=ST.a;
+  const env=mkProg(ENV_VS,ENV_FS),pt=mkProg(PT_VS,PT_FS),sh=mkProg(SH_VS,SH_FS),EM=envMesh(),SM=sphereMesh(28,16);
+  env.aC=gl.getAttribLocation(env.p,'aC');env.aF=gl.getAttribLocation(env.p,'aF');pt.aC=gl.getAttribLocation(pt.p,'aC');pt.aS=gl.getAttribLocation(pt.p,'aS');
+  const evb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,evb);gl.bufferData(gl.ARRAY_BUFFER,EM.V,gl.STATIC_DRAW);
+  const eib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,eib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,EM.I,gl.STATIC_DRAW);
+  const svb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,svb);gl.bufferData(gl.ARRAY_BUFFER,SM.V,gl.STATIC_DRAW);
+  const sib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,sib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,SM.I,gl.STATIC_DRAW);
+  PTA=new Float32Array((TUNE43.MAX_PT+TUNE43.MOTES+8)*8);const pvb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,pvb);gl.bufferData(gl.ARRAY_BUFFER,PTA.byteLength,gl.DYNAMIC_DRAW);
+  window.__v43.envTris=EM.I.length/3;
+  G3={m,die,floor,blob,vb,ib,qb,tex,htex,n:m.I.length,env,pt,sh,evb,eib,en:EM.I.length,svb,sib,sn:SM.I.length,pvb};
   glc.addEventListener('webglcontextlost',e=>{e.preventDefault();USE3D=false;glc.style.display='none';});
   USE3D=true;}catch(e){USE3D=false;if(glc)glc.style.display='none';console.warn('3D 주사위 끔 → 2D 대체:',e.message);}}
 function resize3D(){if(!USE3D)return;const d=Math.min(TUNE3.DPR_MAX,window.devicePixelRatio||1);glc.width=Math.round(innerWidth*d);glc.height=Math.round(innerHeight*d);}
@@ -267,28 +398,51 @@ function upTarget(d,m2){const vF=d.vFin;
   if(vF===d.v)return d.qA;                                                // ② 이미 6: 그대로
   for(const ax of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]]){const q=qMul(qAxis(ax,Math.PI/2),d.qA);if(topFace(q)===vF){d.stepAx=ax;d.stepAng=Math.PI/2;return q;}}
   d.stepAx=[1,0,0];d.stepAng=Math.PI;return qMul(qAxis([1,0,0],Math.PI),d.qA);}   // 맞은편 눈(3→4)은 두 칸
-function updUp(d){const m2=G.mode===2,Tm=m2?TUNE42.STEP_MS:TUNE42.UP_MS,c=m2?TUNE42.STEP_CHARGE:TUNE42.CHARGE,u=clamp((gtime-d.upT0)/Tm,0,1);
+function updUp(d){const m2=G.mode===2,Tm=m2?TUNE42.STEP_MS:TUNE42.UP_MS,c=m2?TUNE42.STEP_CHARGE:TUNE42.CHARGE,u=clamp((gtime-d.upT0)/Tm,0,1),T=TUNE43;
   if(!d.upInit){d.upInit=1;d.qA=d.q.slice();d.pA=d.pos.slice();d.keep=d.vFin===d.v;d.upAx=vnorm([rnd(-1,1),rnd(-0.2,0.2),rnd(-1,1)]);d.qB=upTarget(d,m2);SFX.charge(m2);}
-  const s=proj([d.pA[0],0.5,d.pA[2]]);
-  if(u<c){d.upCh=u/c;d.hi=0.9*d.upCh;d.pos=d.pA.slice();
-    const r=46*(1-d.upCh)+14;for(let i=0;i<TUNE42.P_RISE;i++){const a=Math.random()*PI2;burst(s[0]+Math.cos(a)*r,s[1]+Math.sin(a)*r*0.5,1,PAL.up,40,{g:-380,dir:-Math.PI/2,size:1.3,life:0.9});}
+  const kf=d.keep?T.KEEP:1,gd=wscale*(1/60);   // v4.3: 효과는 모두 주사위 몸체 중심 (바닥 고리·빛기둥 없음)
+  if(u<c){d.upCh=u/c;d.glow=T.GLOW*kf*(0.15+0.85*d.upCh*d.upCh);d.pos=d.pA.slice();
+    const P=d.pA;if(Math.random()<T.CH_N*kf)for(let i=0;i<Math.max(1,Math.round(T.CH_N*kf));i++){const v=rdir(),r=rnd(1.0,1.6),lf=rnd(0.22,0.32);   // 빛 조각이 주사위로 빨려 듦
+      p3(P[0]+v[0]*r,P[1]+Math.abs(v[1])*r*0.8,P[2]+v[2]*r,-v[0]*r/lf,-Math.abs(v[1])*r*0.8/lf,-v[2]*r/lf,lf,UPC[(Math.random()*3)|0],0.9*kf,0.05,0.12,1,0,0);}
+    if(Math.random()<0.7*kf){const v=rdir(),s=surf(v);p3(P[0]+s[0],P[1]+s[1],P[2]+s[2],v[0]*0.3,rnd(0.7,1.4),v[2]*0.3,rnd(0.35,0.6),UPC[0],0.7*kf,0.08,0.02,1,0,1.5);}  // 표면에서 피어오름
     return;}
-  const k=(u-c)/(1-c);d.upCh=1;
+  const k=(u-c)/(1-c);d.upCh=1;d.glow=T.GLOW*kf*(0.75+0.25*Math.sin(gtime/45));     // 회전 중 맥동
   if(!m2){const e=1-Math.pow(1-k,2.2);
     d.pos=[d.pA[0],d.pA[1]+TUNE42.LIFT*Math.sin(Math.PI*Math.min(1,k*1.05)),d.pA[2]];
-    d.q=qMul(qAxis(d.upAx,TUNE42.SPINS*PI2*(1-e)),qSlerp(d.qA,d.qB,e));d.hi=0.9*(1-k);}
-  else if(d.keep){d.q=qMul(qAxis([1,0,0],0.22*Math.sin(PI2*k)),d.qA);d.hi=0.9*(1-k);}
+    d.q=qMul(qAxis(d.upAx,TUNE42.SPINS*PI2*(1-e)),qSlerp(d.qA,d.qB,e));}
+  else if(d.keep){d.q=qMul(qAxis([1,0,0],0.22*Math.sin(PI2*k)),d.qA);}
   else{const e=k*k*(3-2*k);d.q=qMul(qAxis(d.stepAx,d.stepAng*e),d.qA);
-    d.pos=[d.pA[0],d.pA[1]+0.5*(Math.SQRT2*Math.sin(Math.PI/4+((d.stepAng*e)%(Math.PI/2)))-1),d.pA[2]];d.hi=0.9*(1-k);}
+    d.pos=[d.pA[0],d.pA[1]+0.5*(Math.SQRT2*Math.sin(Math.PI/4+((d.stepAng*e)%(Math.PI/2)))-1),d.pA[2]];}
+  for(let i=0,n=Math.round(T.TRAIL_N*kf*(m2?0.5:1));i<n;i++){const v=rdir(),s=surf(v);   // 몸체에서 나오는 파티클 꼬리
+    p3(d.pos[0]+s[0],d.pos[1]+s[1],d.pos[2]+s[2],v[0]*0.4,v[1]*0.4+0.2,v[2]*0.4,rnd(0.25,0.45),UPC[(Math.random()*3)|0],0.85*kf,0.11,0.03,1,0,2);}
   if(u<1)return;
-  d.q=d.qB.slice();d.pos=d.pA.slice();d.upDone=true;d.upCh=0;d.hi=0;const b=d.v;d.v=d.vFin;
+  d.q=d.qB.slice();d.pos=d.pA.slice();d.upDone=true;d.upCh=0;d.flashT=gtime;d.glow=0;const b=d.v;d.v=d.vFin;
   const top=topFace(d.q);__v3.log.push({want:d.v,top,ok:top===d.v,chain:false,stage:'fin'});if(top!==d.v)console.error('강화 후 윗면 불일치',d.v,top);
-  const now=performance.now();
-  if(d.keep){burst(s[0],s[1],10,['#9fe9d0','#c8d6e0','#ffffff'],160,{g:-60,size:0.8});wave(s[0],s[1],30,0.25,'160,220,210',2);SFX.keep();addTrauma(TUNE42.KEEP_TRAUMA);
-    label(s[0],s[1]-48,'유지','','rgba(190,214,226,.85)');}
-  else{burst(s[0],s[1],TUNE42.P_LAND,PAL.up,420,{g:-120,size:1.1});wave(s[0],s[1],58,0.32,'92,242,166',4);wave(s[0],s[1],30,0.2,'230,255,245',2);
+  const now=performance.now(),s=proj([d.pA[0],1.0,d.pA[2]]),C=d.pA;
+  if(d.keep){sparks(C,T.SPARK_KEEP,[[0.62,0.91,0.82],[0.78,0.84,0.88],[1,1,1]],[1.2,2.6],0.6);dust(C,T.DUST_KEEP,[0.8,1.6]);SFX.keep();addTrauma(TUNE42.KEEP_TRAUMA);
+    label(s[0],s[1]-40,'유지','','rgba(190,214,226,.85)');}
+  else{sparks(C,T.SPARK_N,UPC,[3,8.5],1);dust(C,T.DUST_LAND,[1.8,3.6]);
+    SH3.push({c:C.slice(),t0:gtime,dur:T.SHELL_MS,r:T.SHELL_R,col:[0.25,1.0,0.7],a:1.0});SH3.push({c:C.slice(),t0:gtime,dur:T.SHELL_MS*0.6,r:[T.SHELL_R[0],T.SHELL_R[1]*0.6],col:[0.85,1.0,0.95],a:0.8});  // 구형 충격파 2겹
     hitstopUntil=Math.max(hitstopUntil,now+TUNE42.HITSTOP_MS);addTrauma(TUNE42.TRAUMA);kick(TUNE42.PUNCH);bloom=Math.max(bloom,0.25);bloomCol='92,242,166';SFX.clack(0.7);SFX.up();}
   for(const c2 of dice3)if(c2.pending&&c2.parent===d.idx)spawnChain(c2,d);}   // 강화로(또는 그대로) 6이면 여기서 빨간 연쇄 주사위가 이어짐
+// ---------- v4.3 3D 효과 입자 ----------
+const UPC=[[0.36,0.95,0.65],[0.18,0.82,0.54],[0.85,1.0,0.93]];
+const rdir=()=>{const z=rnd(-1,1),a=rnd(0,PI2),r=Math.sqrt(1-z*z);return[r*Math.cos(a),z,r*Math.sin(a)];};
+const surf=v=>{const m=Math.max(Math.abs(v[0]),Math.abs(v[1]),Math.abs(v[2]));return[v[0]/m*0.5,v[1]/m*0.5,v[2]/m*0.5];};   // 방향 v로 주사위 겉면 위 점
+function p3(x,y,z,vx,vy,vz,life,col,a,s0,s1,add,g,dr,real){if(P3.length>=TUNE43.MAX_PT)P3.shift();P3.push({x,y,z,vx,vy,vz,t:0,max:life,c:col,a,s0,s1,add,g,dr,real});}
+function sparks(C,n,pal,sp,a){for(let i=0;i<n;i++){const v=rdir();v[1]=Math.abs(v[1])*0.9+0.1;const s=rnd(sp[0],sp[1]);
+  p3(C[0]+v[0]*0.4,C[1]+v[1]*0.4,C[2]+v[2]*0.4,v[0]*s,v[1]*s,v[2]*s,rnd(0.35,0.8),pal[(Math.random()*pal.length)|0],a,rnd(0.06,0.13),0.02,1,-9,2.2);}}
+function dust(C,n,sp){for(let i=0;i<n;i++){const a=rnd(0,PI2),s=rnd(sp[0],sp[1]),L=rnd(0.28,0.4);   // 바닥 먼지가 바깥으로 밀려나며 피어오름
+  p3(C[0]+Math.cos(a)*0.5,rnd(0.05,0.2),C[2]+Math.sin(a)*0.5,Math.cos(a)*s,rnd(0.2,0.7),Math.sin(a)*s,rnd(0.6,1.1),[L,L*0.88,L*0.74],0.32,rnd(0.25,0.4),rnd(0.8,1.3),0,0.3,3.0);}}
+function updP3(gdt,rdt){for(let i=P3.length-1;i>=0;i--){const p=P3[i],dt=p.real?rdt:gdt;p.t+=dt;if(p.t>=p.max){P3.splice(i,1);continue;}
+    const f=Math.exp(-p.dr*dt);p.vx*=f;p.vy*=f;p.vz*=f;p.vy+=p.g*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;if(p.y<0.02){p.y=0.02;p.vy*=-0.3;}}
+  const T=TUNE43,X0=wallOff[0],Z0=wallOff[1];   // 공중 먼지: 방 안을 천천히 떠다님
+  while(MOTES.length<T.MOTES)MOTES.push({x:rnd(X0,-X0),y:rnd(0.2,3.2),z:rnd(Z0,-Z0*1.3),ph:rnd(0,PI2),sp:rnd(0.6,1.4),s:rnd(0.03,0.07)});
+  for(const m of MOTES){m.ph+=rdt*m.sp;m.x+=Math.sin(m.ph*0.7)*0.05*rdt+0.04*rdt;m.y+=Math.cos(m.ph*0.5)*0.04*rdt;m.z+=Math.sin(m.ph*0.3+1)*0.04*rdt;
+    if(m.x>-X0+0.3)m.x=X0;if(m.y<0.1||m.y>3.4)m.y=rnd(0.3,3);}
+  if(tray>0.05&&Math.random()<0.8){const t=torchPos();p3(t[0]+rnd(-0.05,0.05),t[1],t[2]+rnd(-0.05,0.05),rnd(-0.1,0.1),rnd(0.8,1.3),rnd(-0.1,0.1),rnd(0.25,0.4),[1.0,rnd(0.45,0.62),0.16],0.9,0.26,0.05,1,0,1.5,1);}}  // 횃불 불꽃
+let wallOff=[-2.6,-5.6],torchFl=1;
+const torchPos=()=>[wallOff[0]+0.3,TUNE43.TORCH_Y,wallOff[1]*TUNE43.TORCH_ZK];
 // 기운 모임 링(효과 캔버스): 바깥에서 안으로 좁혀지는 고리 + 도는 호 3개
 function drawUpFx(x,y,r0,ch,now,col){if(ch<=0)return;const r=r0*(1.9-0.9*ch),a=0.25+0.6*ch;ctx.globalCompositeOperation='lighter';
   const g=ctx.createRadialGradient(x,y,0,x,y,r*1.3);g.addColorStop(0,`rgba(${col},${0.45*ch})`);g.addColorStop(1,`rgba(${col},0)`);ctx.fillStyle=g;ctx.fillRect(x-r*1.3,y-r*1.3,r*2.6,r*2.6);
@@ -311,13 +465,15 @@ function proj(p){if(!VP)return[cx,cy];const x=p[0],y=p[1],z=p[2],cw=VP[3]*x+VP[7
   return[((VP[0]*x+VP[4]*y+VP[8]*z+VP[12])/cw+1)/2*W,(1-(VP[1]*x+VP[5]*y+VP[9]*z+VP[13])/cw)/2*H];}
 function upd3D(gdt,rdt){
   tray+=(trayT-tray)*Math.min(1,(rdt||gdt)*7);if(trayT===0&&tray<0.003)tray=0;
+  updP3(gdt,rdt||gdt);
   if(!seq3)return;let allDone=true;
-  for(const d of dice3){if(d.popFx&&gtime>=d.t0){d.popFx=false;chainFx(d);}
+  for(const d of dice3){if(d.popFx&&gtime>=d.t0){d.popFx=false;chainFx(d);dust([d.from[0],0,d.from[1]],TUNE43.DUST_HOP,[1.2,2.4]);}
     if(gtime<d.t0){allDone=false;continue;}
     if(!d.settled){d.age+=gdt*1000;
       if(seq3.held){const cap=d.T*Math.max(0.02,TUNE4.HOLD_U-d.idx*TUNE4.HOLD_STEP_U);if(d.age>cap){d.age=cap;d.phi0+=(rdt||0)*TUNE4.HOVER_SPIN;}}  // 원이 끝날 때까지 착지 직전에 머묾
       const u=Math.min(1,d.age/d.T),H3=TUNE3.HOPS;
-      for(let i=d.lastHop;i<H3.length;i++){if(u>=H3[i][1]){d.lastHop=i+1;const v=[1,0.6,0.32,0.14][i];SFX.clack(v);addTrauma(TUNE3.IMPACT_TRAUMA*v);}else break;}
+      for(let i=d.lastHop;i<H3.length;i++){if(u>=H3[i][1]){d.lastHop=i+1;const v=[1,0.6,0.32,0.14][i];SFX.clack(v);addTrauma(TUNE3.IMPACT_TRAUMA*v);
+          dust([d.pos[0],0,d.pos[2]],Math.round(TUNE43.DUST_HOP*v)+1,[0.8+1.4*v,1.6+2.2*v]);}else break;}   // v4.3: 튕길 때마다 작은 먼지 구름
       const ps=pose(d,u);d.pos=ps.p;d.q=ps.q;
       if(d._tip!==undefined&&d._tip>d.lastTip){if(d.lastTip>=0)SFX.clack(0.18);d.lastTip=d._tip;}
       if(u>=1){d.settled=true;d.setAt=gtime;d.q=pose(d,1).q;   // 궤적의 마지막 자세 그대로 (보정·스냅 없음)
@@ -357,9 +513,14 @@ function render3D(now,rdt){if(!USE3D)return;
   VP=m4mul(m4persp(TUNE3.FOV*Math.PI/180,asp,0.5,80,TUNE3.LENS_SHIFT),m4look(camE,camC));
   gl.viewport(0,0,glc.width,glc.height);gl.clearColor(0,0,0,0);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.disable(gl.CULL_FACE);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
-  // 바닥 (펠트)
+  // v4.3 던전 돌바닥 (횃불·환경광·요철)
+  const T4=TUNE43,tp=torchPos();torchFl=0.82+0.1*Math.sin(now/83)+0.06*Math.sin(now/31+1.7)+0.04*Math.sin(now/13+0.4);
+  wallOff=[-(halfW+T4.WALL_K[0]),-Math.max(halfH+2.2,D*T4.WALL_K[1])];
   const F=G3.floor;gl.useProgram(F.p);gl.bindBuffer(gl.ARRAY_BUFFER,G3.qb);gl.enableVertexAttribArray(F.aQ);gl.vertexAttribPointer(F.aQ,2,gl.FLOAT,false,0,0);
   gl.uniformMatrix4fv(F.u.uVP,false,VP);gl.uniform1f(F.u.uS,40);gl.uniform1f(F.u.uA,tray);gl.uniform2f(F.u.uC,-0.6,-0.4);
+  gl.uniform1f(F.u.uFl,torchFl);gl.uniform1f(F.u.uTile,T4.FLOOR_TILE);gl.uniform1f(F.u.uBump,T4.FLOOR_BUMP);gl.uniform1f(F.u.uTI,T4.TORCH_I);gl.uniform1f(F.u.uAmb,T4.AMB);gl.uniform1f(F.u.uSpot,T4.SPOT);
+  gl.uniform1f(F.u.uTexel,1/T4.TEX);gl.uniform2f(F.u.uWall,wallOff[0],wallOff[1]);gl.uniform3f(F.u.uTorch,tp[0],tp[1],tp[2]);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,G3.htex);gl.uniform1i(F.u.uHt,1);
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,G3.tex);gl.uniform1i(F.u.uTex,0);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
   // 그림자 + 치명 바닥 빛
   const B=G3.blob;gl.useProgram(B.p);gl.vertexAttribPointer(B.aQ,2,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(B.aQ);gl.uniformMatrix4fv(B.u.uVP,false,VP);
@@ -372,15 +533,46 @@ function render3D(now,rdt){if(!USE3D)return;
     if(d.chain&&!d.settled){gl.uniform4f(B.u.uB,d.pos[0],d.pos[2],1.1,0.004);gl.uniform4f(B.u.uCol,1.0,0.08,0.1,0.30);gl.uniform1f(B.u.uSharp,2.6);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);} // v4.1: 굴러오는 빨간 주사위 아래 붉은 빛
     if(d.hi>0.01){gl.uniform4f(B.u.uB,d.pos[0],d.pos[2],1.05,0.004);if(d.chain)gl.uniform4f(B.u.uCol,1.0,0.85,0.85,0.22*d.hi);else gl.uniform4f(B.u.uCol,0.25,0.55,1.0,0.22*d.hi);gl.uniform1f(B.u.uSharp,3.0);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);}}
   gl.disableVertexAttribArray(B.aQ);
+  // v4.3 벽돌 벽 + 돌멩이 (합친 메시 1번 그리기)
+  gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+  const E=G3.env;gl.useProgram(E.p);gl.bindBuffer(gl.ARRAY_BUFFER,G3.evb);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,G3.eib);
+  gl.enableVertexAttribArray(E.aP);gl.vertexAttribPointer(E.aP,3,gl.FLOAT,false,44,0);gl.enableVertexAttribArray(E.aN);gl.vertexAttribPointer(E.aN,3,gl.FLOAT,false,44,12);
+  gl.enableVertexAttribArray(E.aC);gl.vertexAttribPointer(E.aC,3,gl.FLOAT,false,44,24);gl.enableVertexAttribArray(E.aF);gl.vertexAttribPointer(E.aF,2,gl.FLOAT,false,44,36);
+  gl.uniformMatrix4fv(E.u.uVP,false,VP);gl.uniform1f(E.u.uA,tray);gl.uniform1f(E.u.uFl,torchFl);gl.uniform1f(E.u.uTI,T4.TORCH_I);gl.uniform1f(E.u.uAmb,T4.AMB);gl.uniform1f(E.u.uSpot,T4.SPOT);
+  gl.uniform2f(E.u.uC,-0.6,-0.4);gl.uniform2f(E.u.uWall,wallOff[0],wallOff[1]);gl.uniform3f(E.u.uTorch,tp[0],tp[1],tp[2]);gl.uniform1i(E.u.uTex,0);
+  gl.drawElements(gl.TRIANGLES,G3.en,gl.UNSIGNED_SHORT,0);
+  gl.disableVertexAttribArray(E.aC);gl.disableVertexAttribArray(E.aF);gl.disableVertexAttribArray(E.aP);gl.disableVertexAttribArray(E.aN);
   // 주사위
-  gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);
+  gl.disable(gl.BLEND);
   const P=G3.die;gl.useProgram(P.p);gl.bindBuffer(gl.ARRAY_BUFFER,G3.vb);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,G3.ib);
   gl.enableVertexAttribArray(P.aP);gl.vertexAttribPointer(P.aP,3,gl.FLOAT,false,24,0);gl.enableVertexAttribArray(P.aN);gl.vertexAttribPointer(P.aN,3,gl.FLOAT,false,24,12);
   gl.uniformMatrix4fv(P.u.uVP,false,VP);gl.uniform3f(P.u.uCam,camE[0],camE[1],camE[2]);gl.uniform1f(P.u.uTime,now/1000);
-  for(const d of live){gl.uniformMatrix4fv(P.u.uM,false,m4qt(d.q,d.pos));gl.uniform1f(P.u.uGold,d.gold);gl.uniform1f(P.u.uDim,d.dim);gl.uniform1f(P.u.uHi,d.hi);gl.uniform1f(P.u.uRed,d.chain?1:0);gl.drawElements(gl.TRIANGLES,G3.n,gl.UNSIGNED_SHORT,0);}
+  gl.uniform3f(P.u.uTorch,tp[0],tp[1],tp[2]);gl.uniform1f(P.u.uFl,torchFl);gl.uniform1f(P.u.uTD,T4.TORCH_DIE);
+  for(const d of live){const fl=d.flashT!==undefined?Math.max(0,1-(gtime-d.flashT)/T4.FLASH_MS):0,up=Math.max(d.glow||0,fl*fl*1.6*T4.GLOW*(d.keep?T4.KEEP:1));
+    gl.uniformMatrix4fv(P.u.uM,false,m4qt(d.q,d.pos));gl.uniform1f(P.u.uGold,d.gold);gl.uniform1f(P.u.uDim,d.dim);gl.uniform1f(P.u.uHi,d.hi);gl.uniform1f(P.u.uRed,d.chain?1:0);gl.uniform1f(P.u.uUp,up);gl.drawElements(gl.TRIANGLES,G3.n,gl.UNSIGNED_SHORT,0);}
   gl.disableVertexAttribArray(P.aP);gl.disableVertexAttribArray(P.aN);
+  // v4.3 구형 충격파 (주사위 중심에서 3D로 퍼지는 껍질)
+  gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+  for(let i=SH3.length-1;i>=0;i--)if(gtime-SH3[i].t0>SH3[i].dur)SH3.splice(i,1);
+  if(SH3.length){const S=G3.sh;gl.useProgram(S.p);gl.bindBuffer(gl.ARRAY_BUFFER,G3.svb);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,G3.sib);gl.enableVertexAttribArray(S.aP);gl.vertexAttribPointer(S.aP,3,gl.FLOAT,false,0,0);
+    gl.uniformMatrix4fv(S.u.uVP,false,VP);gl.uniform3f(S.u.uCam,camE[0],camE[1],camE[2]);gl.uniform1f(S.u.uT,now/1000);
+    for(const s of SH3){const u=clamp((gtime-s.t0)/s.dur,0,1),e=1-Math.pow(1-u,2.4);gl.uniform4f(S.u.uS,s.c[0],s.c[1],s.c[2],s.r[0]+(s.r[1]-s.r[0])*e);
+      gl.uniform3f(S.u.uCol,s.col[0],s.col[1],s.col[2]);gl.uniform1f(S.u.uA,s.a*Math.pow(1-u,1.3)*1.8);gl.drawElements(gl.TRIANGLES,G3.sn,gl.UNSIGNED_SHORT,0);}
+    gl.disableVertexAttribArray(S.aP);}
+  // v4.3 효과 입자 + 공중 먼지 + 횃불 (점 한 번에 그리기)
+  {let n=0;const A=PTA,put=(x,y,z,r,g,b,a,s)=>{const o=n*8;A[o]=x;A[o+1]=y;A[o+2]=z;A[o+3]=r;A[o+4]=g;A[o+5]=b;A[o+6]=a;A[o+7]=s;n++;};
+    for(const m of MOTES){const dx=m.x-tp[0],dy=m.y-tp[1],dz=m.z-tp[2],lt=0.25+2.2*torchFl/(1+0.12*(dx*dx+dy*dy+dz*dz)),tw=0.6+0.4*Math.sin(m.ph*3);
+      put(m.x,m.y,m.z,1.0*lt,0.8*lt,0.6*lt,0.4*tray*tw,-m.s);}
+    put(tp[0],tp[1]+0.12,tp[2],1.0,0.55,0.2,0.55*tray*torchFl,-1.6);put(tp[0],tp[1]+0.08,tp[2],1.0,0.8,0.5,0.8*tray*torchFl,-0.45);
+    for(const p of P3){if(n>=T4.MAX_PT+T4.MOTES+6)break;const u=p.t/p.max,a=p.a*(p.add?(1-u):(u<0.15?u/0.15:(1-u)/0.85))*tray;put(p.x,p.y,p.z,p.c[0],p.c[1],p.c[2],a,(p.s0+(p.s1-p.s0)*u)*(p.add?-1:1));}
+    if(n){const Q=G3.pt;gl.useProgram(Q.p);gl.bindBuffer(gl.ARRAY_BUFFER,G3.pvb);gl.bufferSubData(gl.ARRAY_BUFFER,0,A.subarray(0,n*8));
+      gl.enableVertexAttribArray(Q.aP);gl.vertexAttribPointer(Q.aP,3,gl.FLOAT,false,32,0);gl.enableVertexAttribArray(Q.aC);gl.vertexAttribPointer(Q.aC,4,gl.FLOAT,false,32,12);gl.enableVertexAttribArray(Q.aS);gl.vertexAttribPointer(Q.aS,1,gl.FLOAT,false,32,28);
+      gl.uniformMatrix4fv(Q.u.uVP,false,VP);gl.uniform1f(Q.u.uK,glc.height/(2*th));gl.drawArrays(gl.POINTS,0,n);
+      gl.disableVertexAttribArray(Q.aP);gl.disableVertexAttribArray(Q.aC);gl.disableVertexAttribArray(Q.aS);}
+    window.__v43.pts=n;}
+  gl.depthMask(true);
   if(__v3.frames.length<2000)__v3.frames.push(performance.now()-t0);}
-function reset3D(){dice3=[];seq3=null;trayT=0;}
+function reset3D(){dice3=[];seq3=null;trayT=0;P3.length=0;SH3.length=0;}
 </script>
 <script>
 'use strict';
@@ -488,7 +680,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const PI2=Math.PI*2;
 const cv=$('#cv'),ctx0=cv.getContext('2d'),fxc=$('#fx'),ctxF=fxc.getContext('2d'),scene=$('#scene');let ctx=ctx0;
-let W=0,H=0,DPR=1,cx=0,cy=0,R=0,RT=0,vig=null,wscale=1;
+let W=0,H=0,DPR=1,cx=0,cy=0,R=0,RT=0,vig=null,wscale=1,stone2d=null;
 const word=$('#word'),sub=$('#sub'),dmgEl=$('#dmg'),hint=$('#hint'),info=$('#info'),sumEl=$('#sum'),pad=$('#pad'),panel=$('#panel');
 function layout(){W=innerWidth;H=innerHeight;DPR=Math.min(2,window.devicePixelRatio||1);
   cv.width=fxc.width=Math.round(W*DPR);cv.height=fxc.height=Math.round(H*DPR);resize3D();
@@ -671,11 +863,13 @@ function updDice(now,gdt,rdt){if(USE3D){upd3D(gdt,rdt);return;}if(!dieSeq)return
   for(const d of dice){if(d.chain&&!d.fx&&now>=d.t0){d.fx=1;burst(d.x0,d.y0,TUNE41.P_CHAIN,PAL.chain,560,{g:-80});wave(d.x0,d.y0,60,0.3,'255,60,70',4);SFX.chain();label(d.x0,d.y0-30,'연쇄!','','#ff4d5e');addTrauma(TUNE41.TRAUMA);}
     if(d.tried&&d.settled&&!d.upDone&&now>=d.upT0){const m2=G.mode===2,c=m2?TUNE42.STEP_CHARGE:TUNE42.CHARGE,u=clamp((now-d.upT0)/(m2?TUNE42.STEP_MS:TUNE42.UP_MS),0,1);
       if(!d.upInit){d.upInit=1;SFX.charge(m2);}
-      if(u<c){d.upCh=u/c;for(let i=0;i<TUNE42.P_RISE;i++){const a=Math.random()*PI2,r=d.s*(1-d.upCh)+8;burst(d.x1+Math.cos(a)*r,d.y1+Math.sin(a)*r*0.5,1,PAL.up,40,{g:-380,dir:-Math.PI/2,size:0.9,life:0.8});}}
-      else{const k2=(u-c)/(1-c);d.upCh=1-k2;d.lift=m2?0.25*Math.sin(Math.PI*k2):1.1*Math.sin(Math.PI*k2);d.rot=(m2?0.5:2)*PI2*k2;if(now-d.lastSw>55){d.shown=1+((Math.random()*6)|0);d.lastSw=now;}}
-      if(u>=1){d.upDone=true;d.upCh=0;d.lift=0;d.rot=0;d.shown=d.v;
+      if(u<c){d.upCh=u/c;if(Math.random()<0.8){const a=Math.random()*PI2,r=d.s*(1.3-0.6*d.upCh);burst(d.x1+Math.cos(a)*r,d.y1+Math.sin(a)*r,1,PAL.up,-r*2.4,{g:0.001,dir:a,size:0.9,life:0.4});}}   // v4.3: 빛 조각이 주사위로 빨려 듦
+      else{const k2=(u-c)/(1-c);d.upCh=1-k2;d.lift=m2?0.25*Math.sin(Math.PI*k2):1.1*Math.sin(Math.PI*k2);d.rot=(m2?0.5:2)*PI2*k2;if(now-d.lastSw>55){d.shown=1+((Math.random()*6)|0);d.lastSw=now;}
+        if(Math.random()<0.7)burst(d.x1+rnd(-0.4,0.4)*d.s,d.y1-(d.lift||0)*d.s+rnd(-0.4,0.4)*d.s,1,PAL.up,60,{g:120,size:0.9,life:0.5});}   // 회전 중 꼬리
+      if(u>=1){d.upDone=true;d.upCh=0;d.lift=0;d.rot=0;d.shown=d.v;d.upFlT=now;
         if(d.v===d.base){burst(d.x1,d.y1,10,['#9fe9d0','#c8d6e0','#ffffff'],160,{g:-60,size:0.8});SFX.keep();label(d.x1,d.y1-d.s*1.1,'유지','','rgba(190,214,226,.85)');}
-        else{onUpLit(d.x1,d.y1);hitstopUntil=Math.max(hitstopUntil,now+TUNE42.HITSTOP_MS);addTrauma(TUNE42.TRAUMA);kick(TUNE42.PUNCH);}}
+        else{burst(d.x1,d.y1,TUNE43.SPARK_N*0.6|0,PAL.up,460,{g:200,size:1.1});burst(d.x1,d.y1+d.s*0.4,14,['#8a7a66','#6b5e50'],140,{g:-20,size:1.6,life:0.9});wave(d.x1,d.y1,d.s*1.5,0.3,'92,242,166',3);SFX.up();
+          hitstopUntil=Math.max(hitstopUntil,now+TUNE42.HITSTOP_MS);addTrauma(TUNE42.TRAUMA);kick(TUNE42.PUNCH);}}
       continue;}
     if(now<d.t0||d.settled)continue;const k=(now-d.t0)/d.dur;
     if(k>=1){d.settled=true;d.shown=d.tried?d.base:d.v;SFX.clack();if(d.crit&&!d.tried){burst(d.x1,d.y1,TUNE.P_DIE_CRIT,PAL.perfect,340,{size:1,g:-60});wave(d.x1,d.y1,d.s*1.3,0.3,'255,211,74',3);SFX.gold();addTrauma(0.08);}
@@ -740,6 +934,8 @@ function upMark(x,y,now,b,v){const bob=Math.sin(now/220)*2.5;y+=bob;
 function draw(now){ctx=ctx0;
   ctx.setTransform(DPR,0,0,DPR,0,0);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;
   const bg=ctx.createRadialGradient(cx,cy,R*0.2,cx,cy,Math.hypot(W,H)*0.6);bg.addColorStop(0,'#141a28');bg.addColorStop(1,'#06070b');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  if(!USE3D&&dice.length){if(!stone2d){const c=stoneTex(512).a;stone2d=ctx.createPattern(c,'repeat');}   // v4.3 ?2d: 어두운 돌바닥 배경 (처음 한 번 생성)
+    ctx.globalAlpha=0.55;ctx.fillStyle=stone2d;ctx.fillRect(0,0,W,H);ctx.globalAlpha=0.45;ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
   let a1=0;if(G&&phase==='run')a1=1;else if(G&&phase==='end')a1=clamp(1-(now-G.endAt-250)/450,0,1);
   if(a1>0.01)drawStage1(now,a1);
   for(const c of cracks){const a=1-c.t/c.dur;ctx.lineCap='round';ctx.lineJoin='round';
@@ -759,7 +955,7 @@ function draw(now){ctx=ctx0;
   for(const d of dice){if(now<d.t0)continue;const k=Math.min(1,(now-d.t0)/d.dur),e=1-Math.pow(1-k,3),hop=Math.sin(k*Math.PI)*-d.s*1.4*(1-k*0.5);
     const x=d.x0+(d.x1-d.x0)*e,y=d.y0+(d.y1-d.y0)*e+hop-(d.lift||0)*d.s,rot=d.spin*(1-e)*Math.PI+(d.rot||0),s=d.s*(0.5+0.5*e);
     const rev=d.settled&&(!d.tried||d.upDone)&&now>=dieSeq.revealAt,gold=rev&&d.crit,dim=rev&&!d.ok;
-    if(d.upCh>0)drawUpFx(d.x1,d.y1,d.s*0.75,d.upCh,now,'92,242,190');
+    if(d.upCh>0&&false)drawUpFx(d.x1,d.y1,d.s*0.75,d.upCh,now,'92,242,190');   // v4.3: 바닥 고리 끔
     ctx.save();ctx.translate(x,y);ctx.rotate(rot);ctx.globalAlpha=dim?0.38:1;
     if(gold&&d.chain){ctx.fillStyle='#b0101e';}
     else if(gold){const g=ctx.createLinearGradient(-s/2,-s/2,s/2,s/2);g.addColorStop(0,'#fff1a8');g.addColorStop(0.5,'#ffcf3a');g.addColorStop(1,'#d88a10');ctx.fillStyle=g;}
@@ -768,8 +964,12 @@ function draw(now){ctx=ctx0;
     rr(-s/2,-s/2,s,s,s*0.2);ctx.fill();
     if(d.chain&&rev&&d.ok){ctx.strokeStyle=gold?'#ffd34a':'rgba(255,255,255,.9)';ctx.lineWidth=2;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=10;rr(-s/2,-s/2,s,s,s*0.2);ctx.stroke();ctx.shadowBlur=0;}
     ctx.fillStyle=gold?(d.chain?'#ffd34a':'#4a2a00'):(d.chain?'#f2eeec':'#151821');const pr=s*0.085,o=s*0.25;for(const [px,py] of PIPS[d.shown]){ctx.beginPath();ctx.arc(px*o,py*o,pr,0,PI2);ctx.fill();}
-    ctx.restore();ctx.globalAlpha=1;if(d.settled&&d.up&&d.upDone)upMark(x,y-s*0.95,now,d.base,d.v);}
-  if(USE3D&&VP)for(const d of dice3){if(d.upCh>0){const p=proj([d.pA[0],0.5,d.pA[2]]),q=proj([d.pA[0]+0.5,0.5,d.pA[2]]);drawUpFx(p[0],p[1],Math.hypot(q[0]-p[0],q[1]-p[1])*1.3,d.upCh,now,'92,242,190');}
+    ctx.restore();ctx.globalAlpha=1;
+    const fl2=d.upFlT?Math.max(0,1-(now-d.upFlT)/TUNE43.FLASH_MS):0,gw=Math.max(d.upCh>0?(0.35+0.65*d.upCh)*(0.8+0.2*Math.sin(now/45)):0,fl2*1.4)*(d.v===d.base&&d.upDone?TUNE43.KEEP:1);
+    if(gw>0.01){ctx.save();ctx.translate(x,y);ctx.rotate(rot);ctx.globalCompositeOperation='lighter';ctx.strokeStyle=`rgba(92,242,190,${Math.min(1,gw)})`;ctx.lineWidth=2+2*gw;
+      ctx.shadowColor='#5cf2be';ctx.shadowBlur=18*gw;rr(-s/2,-s/2,s,s,s*0.2);ctx.stroke();ctx.fillStyle=`rgba(92,242,190,${0.25*Math.min(1,gw)})`;ctx.fill();ctx.restore();}   // v4.3: 몸체 테두리 빛
+    if(d.settled&&d.up&&d.upDone)upMark(x,y-s*0.95,now,d.base,d.v);}
+  if(USE3D&&VP)for(const d of dice3){   // v4.3: 바닥 고리 없음 (효과는 3D 몸체에서)
     if(d.upCh>0||((d.lit||d.upDone)&&d.up)){const p=proj([d.pos[0],1.0,d.pos[2]-0.95]);if((d.lit||d.upDone)&&d.up)upMark(p[0],p[1],now,d.base,d.v);}}
   if(S2&&phase==='air')drawRings(now);
   drawLabels(now);
