@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#07080c">
-<title>LB v4.3 · 방향 입력 던지기 + 착지 원 + 빨간 연쇄 + 몸체 강화 효과 + 던전 바닥</title>
+<title>LB v4.4 · 방향 입력 던지기 + 착지 원 + 빨간 연쇄 + 몸체 강화 효과 + 던전 바닥 + 실패 크랙·깨짐</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#07080c;color:#fff;overscroll-behavior:none;touch-action:none;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
@@ -77,6 +77,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#07080c;color:#fff;ove
     <div class="seg" data-o="direct"><button data-v="0" class="on">아무 곳 탭</button><button data-v="1">주사위 직접 탭</button></div></div>
   <div class="row"><div class="lab"><span>2단계 (착지 전 원)</span></div>
     <div class="seg" data-o="stage2"><button data-v="1" class="on">켬</button><button data-v="0">끔 (1단계만)</button></div></div>
+  <div class="row"><div class="lab"><span>실패 주사위 깨짐</span></div>
+    <div class="seg" data-o="shatter"><button data-v="1" class="on">켬</button><button data-v="0">크랙만</button></div></div>
 </div>
 <div id="ui"><button data-d="easy">쉬움</button><button data-d="normal" class="on">보통</button><button data-d="hard">어려움</button></div>
 <div id="pad"><button data-k="L">←</button><button data-k="U">↑</button><button data-k="D">↓</button><button data-k="R">→</button></div>
@@ -118,6 +120,21 @@ const TUNE43={
   SPARK_N:64, SPARK_KEEP:12,                // 착지 폭발 입자 수 (강화 / 유지)
   SHELL_MS:380, SHELL_R:[0.55,2.6],         // 구형 충격파 길이, 반지름 (시작 → 끝)
 };
+// v4.4: 실패 주사위 크랙 → 깨짐 물리
+const TUNE44={
+  CRACK_MS:700, HOLD_MS:320,               // 금이 다 퍼지는 시간, 다 퍼진 뒤 멈춤
+  DMG_GAP_MS:380, STAGGER_MS:150,          // 피해 숫자 팝 뒤 첫 깨짐까지, 실패 주사위끼리 시차
+  CRACK_REACH:1.9, CRACK_W:[0.007,0.02],   // 금이 뻗는 거리(주사위 1 = 1), 금 굵기 (시작 → 끝)
+  DIM_FAIL:[0.20,0.42],                    // 실패 주사위 밝기 (상아 / 빨간 연쇄). v4.3은 0.10 / 0.30 → 조각 모양이 보이게 올림
+  TREMOR:0.012,                            // 금 가는 동안 떨림 크기
+  FRAGS:12, SEED_GAP:0.33, PATTERNS:3, MAX_FRAG:140,   // 주사위 1개당 조각 수, 조각 씨앗 최소 간격, 미리 만드는 조각 모양 수, 화면 전체 조각 상한
+  G:22, OUT:[0.7,2.0], UP:[0.6,2.0], SPIN:[3,9],   // 중력, 바깥으로 튀는 속도, 위로 뜨는 속도, 회전 속도(rad/s)
+  BOUNCE:0.28, MU:0.6, ROLL:2.5, SLIDE:1.2, // 튕김 정도, 마찰, 바닥에서 회전·미끄럼 감쇠
+  SLEEP_S:0.35, SUB:2,                     // 이 시간 동안 거의 안 움직이면 멈춤, 프레임당 물리 나눔
+  TRAUMA:0.10, POWDER:26, DUST:12,         // 깨질 때 셰이크, 돌가루 입자 수, 먼지 덩어리 수
+  SND_V:1.2, SND_MAX:3,                    // 이보다 빠르게 부딪히면 딸깍, 프레임당 딸깍 최대 수
+};
+let FR=[],FRP=[],frSnd=0;window.__v44={brk:[],frags:0};
 let P3=[],SH3=[],MOTES=[],PTA=null;
 let USE3D=false,gl=null,glc=null,G3=null,tray=0,trayT=0,gtime=0,dice3=[],seq3=null,VP=null,camE=[0,12,6],camC=[0,0,0];
 window.__v3={log:[],frames:[]};
@@ -136,6 +153,7 @@ function qSlerp(a,b,t){let d=a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3],bb=b;if(d<0
   if(d>0.9995){const o=a.map((x,i)=>x+(bb[i]-x)*t),l=Math.hypot(...o);return o.map(x=>x/l);}
   const th=Math.acos(d),s=Math.sin(th),wa=Math.sin((1-t)*th)/s,wb=Math.sin(t*th)/s;return a.map((x,i)=>x*wa+bb[i]*wb);}
 function qRot(q,v){const u=[q[0],q[1],q[2]],t=vcross(u,v).map(x=>2*x),c=vcross(u,t);return[v[0]+q[3]*t[0]+c[0],v[1]+q[3]*t[1]+c[1],v[2]+q[3]*t[2]+c[2]];}
+const vadd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],qnorm=q=>{const l=Math.hypot(q[0],q[1],q[2],q[3])||1;return[q[0]/l,q[1]/l,q[2]/l,q[3]/l];};   // v4.4
 function m4qt(q,p){const[x,y,z,w]=q;return new Float32Array([1-2*(y*y+z*z),2*(x*y+z*w),2*(x*z-y*w),0,2*(x*y-z*w),1-2*(x*x+z*z),2*(y*z+x*w),0,2*(x*z+y*w),2*(y*z-x*w),1-2*(x*x+y*y),0,p[0],p[1],p[2],1]);}
 // 면 배치: +Y=1, -Y=6, +X=2, -X=5, +Z=3, -Z=4 (마주 보는 면 합 7)
 const FACE_N={1:[0,1,0],6:[0,-1,0],2:[1,0,0],5:[-1,0,0],3:[0,0,1],4:[0,0,-1]};
@@ -146,6 +164,7 @@ function topFace(q){let best=0,bv=-9;for(const k in FACE_N){const y=qRot(q,FACE_
 const DIE_VS=`attribute vec3 aP;attribute vec3 aN;uniform mat4 uVP,uM;varying vec3 vOP,vON,vWP;
 void main(){vOP=aP;vON=aN;vec4 w=uM*vec4(aP,1.0);vWP=w.xyz;gl_Position=uVP*w;}`;
 const DIE_FS=`precision highp float;varying vec3 vOP,vON,vWP;uniform mat4 uM;uniform vec3 uCam;uniform float uGold,uDim,uHi,uTime,uRed,uUp,uFl,uTD;uniform vec3 uTorch;
+uniform float uCrk,uNs,uCW;uniform vec3 uCO;uniform vec3 uSd[16];uniform vec2 uDF;   // v4.4 크랙: 진행도, 조각 씨앗(조각 경계 = 금 선), 시작점
 const float PI=3.14159265;
 const vec3 IVORY=vec3(0.80,0.71,0.53);   // 상아색 레진 (선형)
 const vec3 GOLD=vec3(1.0,0.72,0.30);     // 금 F0
@@ -168,19 +187,31 @@ void main(){vec3 p=vOP,a=abs(p),n=normalize(vON);float val;vec2 uv;vec3 tu,tv;
  if(a.y>=a.x&&a.y>=a.z){val=p.y>0.0?1.0:6.0;uv=p.xz;tu=vec3(1,0,0);tv=vec3(0,0,1);}
  else if(a.x>=a.z){val=p.x>0.0?2.0:5.0;uv=p.zy;tu=vec3(0,0,1);tv=vec3(0,1,0);}
  else{val=p.z>0.0?3.0:4.0;uv=p.xy;tu=vec3(1,0,0);tv=vec3(0,1,0);}
- float best=9.0;vec2 bw=vec2(0.0);
+ float best=9.0;vec2 bw=vec2(0.0);float inn=step(1.5,length(vON));   // v4.4: 조각 안쪽 단면 (노멀 길이 2로 표시)
  for(int i=0;i<7;i++){if(act(val,i)){vec2 w=uv-cand(i)*0.25;float d=length(w);if(d<best){best=d;bw=w;}}}
- const float RP=0.088;float pip=1.0-smoothstep(RP-0.007,RP+0.002,best);float rim=smoothstep(RP+0.035,RP,best)*(1.0-pip);
+ const float RP=0.088;float pip=(1.0-smoothstep(RP-0.007,RP+0.002,best))*(1.0-inn);float rim=smoothstep(RP+0.035,RP,best)*(1.0-pip)*(1.0-inn);
+ float crk=0.0,lip=0.0;
+ if(uCrk>0.0){vec3 q=p+0.016*vec3(sin(p.y*41.0+p.z*23.0),sin(p.z*37.0+p.x*29.0),sin(p.x*33.0+p.y*27.0));
+  float bd=9.0;vec3 sa=vec3(0.0);
+  for(int i=0;i<16;i++){if(float(i)>=uNs)break;float dd=distance(q,uSd[i]);if(dd<bd){bd=dd;sa=uSd[i];}}
+  float e=9.0;
+  for(int i=0;i<16;i++){if(float(i)>=uNs)break;vec3 ab=uSd[i]-sa;float l=length(ab);if(l<0.0001)continue;e=min(e,dot((sa+uSd[i])*0.5-q,ab/l));}
+  float g=length(q-uCO),front=uCrk-g+0.05*sin(q.x*19.0+q.z*13.0);   // 시작점에서 퍼지는 앞머리 (uCrk = 진행도 × 뻗는 거리)
+  float w=uCW*smoothstep(0.0,0.3,front);
+  crk=(1.0-smoothstep(w*0.45,w,e))*step(0.0,front)*(1.0-inn);
+  lip=(1.0-smoothstep(w,w*2.8,e))*step(0.0,front)*(1.0-crk)*(1.0-inn);}
  vec2 w=bw/RP;float t=clamp(length(w),0.0,1.0);vec3 np=n;
  if(best<RP+0.002)np=normalize(n-(tu*w.x+tv*w.y)*1.1*t);          // 음각: 눈 안쪽 노멀이 가운데로 기움
  else if(rim>0.0)np=normalize(n+(tu*bw.x+tv*bw.y)/max(best,0.001)*0.25*rim); // 눈 테두리 경사
  vec3 N=normalize((uM*vec4(np,0.0)).xyz),V=normalize(uCam-vWP);
- float edge=1.0-max(max(abs(n.x),abs(n.y)),abs(n.z));
+ float edge=(1.0-max(max(abs(n.x),abs(n.y)),abs(n.z)))*(1.0-inn);
  float gB=uGold*(1.0-uRed);                                         // 금속 몸체는 상아 주사위만 (빨간 치명은 몸체 유지 + 금색 눈)
  vec3 body=mix(IVORY,RED,uRed),pipc=mix(mix(PIP,PIPW,uRed),vec3(0.85,0.40,0.03),uGold*uRed);
  vec3 alb=mix(mix(body,vec3(0.0),gB),pipc,pip);
+ float gr=0.86+0.14*sin(p.x*91.0+sin(p.y*73.0)*2.0+p.z*57.0)*sin(p.z*83.0-p.y*61.0);
+ alb=mix(alb,mix(vec3(0.30,0.25,0.18),vec3(0.16,0.02,0.02),uRed)*gr,inn);   // 안쪽 단면: 거친 속 색
  vec3 F0=mix(vec3(mix(0.045,0.055,uRed)),GOLD,gB*(1.0-pip));
- float rough=mix(mix(mix(0.30,0.15,uRed),0.20,gB),0.42,pip),ar=rough*rough;
+ float rough=mix(mix(mix(mix(0.30,0.15,uRed),0.20,gB),0.42,pip),0.95,inn),ar=rough*rough;
  vec3 col=shade(N,V,normalize(KEY),vec3(3.1,2.9,2.6),alb,F0,ar,0.35);
  col+=shade(N,V,normalize(vec3(0.8,0.4,-0.4)),vec3(0.45,0.55,0.75),alb,F0,ar,0.5);
  col+=shade(N,V,normalize(vec3(0.1,0.35,-1.0)),vec3(0.9,0.85,0.8),alb,F0,ar,0.0);
@@ -196,7 +227,8 @@ void main(){vec3 p=vOP,a=abs(p),n=normalize(vON);float val;vec2 uv;vec3 tu,tv;
  col+=mix(vec3(0.35,0.62,1.0)*pow(1.0-nv,3.0)*1.3,vec3(1.0,0.95,0.93)*pow(1.0-nv,5.0)*0.75,uRed)*uHi; // 성공: 테두리 빛 (빨간 주사위는 가는 흰 빛)
  vec3 ua=abs(vOP);float med=max(min(ua.x,ua.y),min(max(ua.x,ua.y),ua.z)),bord=smoothstep(0.34,0.49,med);   // 면 테두리(모서리 쪽)
  col+=vec3(0.20,1.0,0.72)*uUp*(1.0-pip)*(1.4*pow(1.0-nv,2.2)+1.6*bord+2.0*smoothstep(0.03,0.2,edge)+0.08); // v4.3 강화: 모서리·면 테두리를 따라 차오르는 초록·청록 빛 (눈은 가리지 않음)
- float l=dot(col,vec3(0.3,0.59,0.11));col=mix(col,mix(vec3(l),vec3(l)*RUST,uRed),uDim*0.85)*mix(1.0,mix(0.10,0.30,uRed),uDim); // 실패: 회색(상아) / 어두운 적갈색(빨강)
+ float l=dot(col,vec3(0.3,0.59,0.11));col=mix(col,mix(vec3(l),vec3(l)*RUST,uRed),uDim*0.85)*mix(1.0,mix(uDF.x,uDF.y,uRed),uDim); // 실패: 회색(상아) / 어두운 적갈색(빨강)
+ col=mix(col*(1.0+2.2*lip),vec3(0.004,0.0035,0.003),crk);   // v4.4 금: 검은 틈 + 틈 가장자리 밝은 깨진 결
  col=(col*(2.51*col+0.03))/(col*(2.43*col+0.59)+0.14);gl_FragColor=vec4(pow(clamp(col,0.0,1.0),vec3(0.4545)),1.0);}`;
 const FLOOR_VS=`attribute vec2 aQ;uniform mat4 uVP;uniform float uS;varying vec2 vXZ;void main(){vXZ=aQ*uS;gl_Position=uVP*vec4(vXZ.x,0.0,vXZ.y,1.0);}`;
 // v4.3 던전 돌바닥: 색(uTex) + 높이(uHt) 텍스처, 높이 차로 요철 노멀 → 횃불(따뜻)·환경광(차가움)·위쪽 빛
@@ -349,6 +381,11 @@ function init3D(){try{
   const sib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,sib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,SM.I,gl.STATIC_DRAW);
   PTA=new Float32Array((TUNE43.MAX_PT+TUNE43.MOTES+8)*8);const pvb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,pvb);gl.bufferData(gl.ARRAY_BUFFER,PTA.byteLength,gl.DYNAMIC_DRAW);
   window.__v43.envTris=EM.I.length/3;
+  // v4.4: 깨짐 조각 모양을 미리 만들어 둔다
+  const ft0=performance.now();FRP=[];for(let i=0;i<TUNE44.PATTERNS;i++){const P=fracPattern(TUNE44.FRAGS);
+    P.vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,P.vb);gl.bufferData(gl.ARRAY_BUFFER,P.V,gl.STATIC_DRAW);
+    P.ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,P.ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,P.I,gl.STATIC_DRAW);FRP.push(P);}
+  window.__v44.fracMs=Math.round(performance.now()-ft0);window.__v44.pieces=FRP.map(P=>P.fr.length);
   G3={m,die,floor,blob,vb,ib,qb,tex,htex,n:m.I.length,env,pt,sh,evb,eib,en:EM.I.length,svb,sib,sn:SM.I.length,pvb};
   glc.addEventListener('webglcontextlost',e=>{e.preventDefault();USE3D=false;glc.style.display='none';});
   USE3D=true;}catch(e){USE3D=false;if(glc)glc.style.display='none';console.warn('3D 주사위 끔 → 2D 대체:',e.message);}}
@@ -443,6 +480,75 @@ function updP3(gdt,rdt){for(let i=P3.length-1;i>=0;i--){const p=P3[i],dt=p.real?
   if(tray>0.05&&Math.random()<0.8){const t=torchPos();p3(t[0]+rnd(-0.05,0.05),t[1],t[2]+rnd(-0.05,0.05),rnd(-0.1,0.1),rnd(0.8,1.3),rnd(-0.1,0.1),rnd(0.25,0.4),[1.0,rnd(0.45,0.62),0.16],0.9,0.26,0.05,1,0,1.5,1);}}  // 횃불 불꽃
 let wallOff=[-2.6,-5.6],torchFl=1;
 const torchPos=()=>[wallOff[0]+0.3,TUNE43.TORCH_Y,wallOff[1]*TUNE43.TORCH_ZK];
+// ================= v4.4 실패 주사위: 크랙 → 깨짐 → 조각 물리 =================
+// 조각 모양: 정육면체를 씨앗 점들의 보로노이 칸으로 잘라 둔다(시작 때 PATTERNS개). 셰이더 금 선도 같은 씨앗으로 그려서 금 = 조각 경계.
+function clipPoly(fs,n,d){const out=[],cap=[];
+  for(const f of fs){const v=f.v,r=[];for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length],da=vdot(n,a)-d,db=vdot(n,b)-d;
+      if(da<=0)r.push(a);if(Math.abs(da)<1e-9)cap.push(a);
+      if((da<0&&db>0)||(da>0&&db<0)){const t=da/(da-db),p=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];r.push(p);cap.push(p);}}
+    if(r.length>=3)out.push({v:r,n:f.n,o:f.o});}
+  const u=[];for(const p of cap)if(!u.some(q=>Math.abs(q[0]-p[0])+Math.abs(q[1]-p[1])+Math.abs(q[2]-p[2])<1e-7))u.push(p);
+  if(u.length>=3){const c=u.reduce((s,p)=>[s[0]+p[0]/u.length,s[1]+p[1]/u.length,s[2]+p[2]/u.length],[0,0,0]),e1=vnorm(vsub(u[0],c)),e2=vcross(n,e1);
+    const ang=p=>{const w=vsub(p,c);return Math.atan2(vdot(w,e2),vdot(w,e1));};u.sort((a,b)=>ang(a)-ang(b));out.push({v:u,n:n.slice(),o:0});}
+  return out;}
+function fracPattern(N){const S=[];let tries=0;   // 씨앗끼리 최소 거리를 둬서 가늘고 긴 조각을 줄인다
+  while(S.length<N&&tries<4000){tries++;const p=[rnd(-0.42,0.42),rnd(-0.42,0.42),rnd(-0.42,0.42)];if(S.every(q=>vlen(vsub(p,q))>TUNE44.SEED_GAP*(tries<2000?1:0.7)))S.push(p);}N=S.length;
+  const box=[];for(let ax=0;ax<3;ax++)for(const s of[-1,1]){const n=[0,0,0];n[ax]=s;const u=(ax+1)%3,w=(ax+2)%3,v=[];
+    for(const [a,b] of [[-1,-1],[1,-1],[1,1],[-1,1]]){const p=[0,0,0];p[ax]=0.5*s;p[u]=0.5*a;p[w]=0.5*b;v.push(p);}box.push({v,n,o:1});}
+  const V=[],I=[],fr=[];
+  for(let i=0;i<N;i++){let fs=box;
+    for(let j=0;j<N&&fs.length;j++){if(j===i)continue;const n=vnorm(vsub(S[j],S[i])),m=[(S[i][0]+S[j][0])/2,(S[i][1]+S[j][1])/2,(S[i][2]+S[j][2])/2];fs=clipPoly(fs,n,vdot(n,m));}
+    if(fs.length<4)continue;
+    const pts=[];for(const f of fs)for(const p of f.v)if(!pts.some(q=>Math.abs(q[0]-p[0])+Math.abs(q[1]-p[1])+Math.abs(q[2]-p[2])<1e-6))pts.push(p);
+    const c=pts.reduce((s,p)=>[s[0]+p[0]/pts.length,s[1]+p[1]/pts.length,s[2]+p[2]/pts.length],[0,0,0]);
+    const off=I.length;
+    for(const f of fs){const b=V.length/6,k=f.o?1:2;for(const p of f.v)V.push(p[0],p[1],p[2],f.n[0]*k,f.n[1]*k,f.n[2]*k);   // 안쪽 단면은 노멀 길이 2
+      for(let t=1;t<f.v.length-1;t++)I.push(b,b+t,b+t+1);}
+    const rel=pts.map(p=>vsub(p,c)),r=Math.max(...rel.map(vlen));
+    fr.push({c,r,off,cnt:I.length-off,pts:rel});}
+  const sd=new Float32Array(48);S.forEach((s,i)=>{if(i<16)sd.set(s,i*3);});
+  return{V:new Float32Array(V),I:new Uint16Array(I),fr,sd,ns:Math.min(16,N)};}
+const topCorner=q=>{let best=null,by=-9;for(const x of[-0.5,0.5])for(const y of[-0.5,0.5])for(const z of[-0.5,0.5]){const w=qRot(q,[x,y,z]);if(w[1]>by){by=w[1];best=[x,y,z];}}
+  return[best[0]*0.9,best[1]*0.9,best[2]*0.9];};   // 금이 시작하는 점: 지금 가장 위쪽 모서리
+function updCrack(d){const T=TUNE44;
+  if(d.crk0==null){d.crk0=gtime;d.crk=0;d.co=topCorner(d.q);d.pat=FRP[(Math.random()*FRP.length)|0];SFX.crack(0.7);addTrauma(0.03);}
+  const u=clamp((gtime-d.crk0)/T.CRACK_MS,0,1);d.crk=1-Math.pow(1-u,1.7);
+  if(u>0.45&&!d.crkS){d.crkS=1;SFX.crack(1);addTrauma(0.02);}
+  if(u<1&&Math.random()<0.4){const v=rdir();v[1]=Math.abs(v[1]);const s=qRot(d.q,surf(v)),L=rnd(0.3,0.42);   // 틈 사이로 약한 먼지
+    p3(d.pos[0]+s[0],d.pos[1]+s[1],d.pos[2]+s[2],s[0]*0.4,rnd(0.1,0.4),s[2]*0.4,rnd(0.5,0.9),[L,L*0.9,L*0.78],0.35,0.05,0.22,0,0.4,2.5);}
+  if(!OPT.shatter||d.broken||seq3.dmgAt==null)return;
+  if(d.brkAt==null){seq3.brkK=(seq3.brkK||0)+1;d.brkAt=Math.max(d.crk0+T.CRACK_MS+T.HOLD_MS,seq3.dmgAt+T.DMG_GAP_MS)+(seq3.brkK-1)*T.STAGGER_MS;}
+  if(gtime>=d.brkAt)shatter(d);}
+function shatter(d){const T=TUNE44,pat=d.pat;d.broken=true;
+  while(FR.length&&FR.length+pat.fr.length>T.MAX_FRAG)FR.shift();
+  for(const f of pat.fr){const c=qRot(d.q,f.c),o=vnorm(c),s=rnd(T.OUT[0],T.OUT[1]),ax=rdir();
+    FR.push({f,pat,red:d.chain?1:0,dim:d.dim,co:d.co,X:[d.pos[0]+c[0],d.pos[1]+c[1],d.pos[2]+c[2]],V:[o[0]*s,Math.max(0,o[1])*s*0.5+rnd(T.UP[0],T.UP[1])*(0.4+0.6*(c[1]+0.5)),o[2]*s],
+      Q:d.q.slice(),W:ax.map(x=>x*rnd(T.SPIN[0],T.SPIN[1])),sleep:0,hits:0});}
+  const C=[d.pos[0],d.pos[1],d.pos[2]];
+  for(let i=0;i<T.POWDER;i++){const v=rdir(),s=rnd(0.8,3.2),L=rnd(0.35,0.55);   // 돌가루
+    p3(C[0]+v[0]*0.3,C[1]+v[1]*0.3,C[2]+v[2]*0.3,v[0]*s,Math.abs(v[1])*s+0.8,v[2]*s,rnd(0.4,0.9),[L,L*0.9,L*0.76],0.8,rnd(0.04,0.08),0.03,0,-14,1.2);}
+  dust([C[0],0,C[2]],T.DUST,[0.9,2.2]);SFX.shatter();addTrauma(T.TRAUMA);window.__v44.brk.push({t:performance.now(),g:Math.round(gtime),dmg:Math.round(seq3.dmgAt),crk0:Math.round(d.crk0)});}
+function contactFrag(F,r,n,I){const V=F.V,W=F.W,vc=vadd(V,vcross(W,r)),vn=vdot(vc,n);if(vn>=0)return 0;
+  const rn=vcross(r,n),k=1+vdot(rn,rn)/I,e=-vn<0.6?0:TUNE44.BOUNCE,j=-(1+e)*vn/k;
+  for(let i=0;i<3;i++){V[i]+=n[i]*j;W[i]+=rn[i]*j/I;}
+  const vc2=vadd(V,vcross(W,r)),vt=vsub(vc2,n.map(x=>x*vdot(vc2,n))),lt=vlen(vt);
+  if(lt>1e-5){const t=vt.map(x=>x/lt),rt=vcross(r,t),kt=1+vdot(rt,rt)/I,jt=Math.min(lt/kt,TUNE44.MU*j);for(let i=0;i<3;i++){V[i]-=t[i]*jt;W[i]-=rt[i]*jt/I;}}
+  return -vn;}
+function updFrags(gdt){if(!FR.length||gdt<=0)return;const T=TUNE44,dt=gdt/T.SUB;frSnd=T.SND_MAX;
+  const PL=[[[0,1,0],0],[[1,0,0],wallOff[0]],[[0,0,1],wallOff[1]]];   // 바닥, 옆벽, 뒷벽
+  for(const F of FR){if(F.sleep>T.SLEEP_S)continue;const I=0.4*F.f.r*F.f.r+0.004;
+    for(let s=0;s<T.SUB;s++){F.V[1]-=T.G*dt;for(let i=0;i<3;i++)F.X[i]+=F.V[i]*dt;
+      const wl=vlen(F.W);if(wl>1e-5)F.Q=qnorm(qMul(qAxis(F.W.map(x=>x/wl),wl*dt),F.Q));
+      let ground=false;
+      for(const [n,d] of PL){let pen=0,rb=null;
+        for(const p of F.f.pts){const r=qRot(F.Q,p),pe=d-(n[0]*(F.X[0]+r[0])+n[1]*(F.X[1]+r[1])+n[2]*(F.X[2]+r[2]));if(pe>pen){pen=pe;rb=r;}}
+        if(rb){for(let i=0;i<3;i++)F.X[i]+=n[i]*pen;const hv=contactFrag(F,rb,n,I);if(n[1])ground=true;
+          if(hv>T.SND_V&&F.hits<2&&frSnd>0){F.hits++;frSnd--;SFX.clack(clamp(hv*0.05,0.05,0.3));
+            const L=rnd(0.32,0.45);for(let k=0;k<2;k++)p3(F.X[0],0.05,F.X[2],rnd(-0.5,0.5),rnd(0.3,0.8),rnd(-0.5,0.5),rnd(0.3,0.6),[L,L*0.9,L*0.78],0.5,0.05,0.12,0,-3,2);}}}
+      if(ground){const a=Math.exp(-T.ROLL*dt),b=Math.exp(-T.SLIDE*dt);for(let i=0;i<3;i++)F.W[i]*=a;F.V[0]*=b;F.V[2]*=b;}
+      if(ground&&vlen(F.V)<0.12&&vlen(F.W)<0.8)F.sleep+=dt;else F.sleep=0;}
+    if(F.sleep>T.SLEEP_S){F.V=[0,0,0];F.W=[0,0,0];}}
+  window.__v44.frags=FR.length;}
 // 기운 모임 링(효과 캔버스): 바깥에서 안으로 좁혀지는 고리 + 도는 호 3개
 function drawUpFx(x,y,r0,ch,now,col){if(ch<=0)return;const r=r0*(1.9-0.9*ch),a=0.25+0.6*ch;ctx.globalCompositeOperation='lighter';
   const g=ctx.createRadialGradient(x,y,0,x,y,r*1.3);g.addColorStop(0,`rgba(${col},${0.45*ch})`);g.addColorStop(1,`rgba(${col},0)`);ctx.fillStyle=g;ctx.fillRect(x-r*1.3,y-r*1.3,r*2.6,r*2.6);
@@ -451,6 +557,10 @@ function drawUpFx(x,y,r0,ch,now,col){if(ch<=0)return;const r=r0*(1.9-0.9*ch),a=0
   ctx.lineWidth=3.5;for(let i=0;i<3;i++){const s0=now/140+i*PI2/3;ctx.beginPath();ctx.ellipse(x,y,r*0.8,r*0.44,0,s0,s0+0.9);ctx.stroke();}
   ctx.globalCompositeOperation='source-over';}
 function roll3D(res,isCrit){launch3D(res.dice.filter(d=>!d.chain).map(d=>d.v),false);release3D(res,isCrit);}
+// v4.4: 공중에 머무는 궤적 지점. 방향 입력 중에는 시간 막대와 함께 RUN_U 구간을 천천히 내려오고, 원 단계에서는 v4처럼 HOLD_U까지
+function holdCapU(d){const h=Math.max(0.02,TUNE4.HOLD_U-d.idx*TUNE4.HOLD_STEP_U),R=TUNE45.RUN_U;
+  if(G&&(phase==='run'||phase==='end')){const p=phase==='run'?clamp((performance.now()-G.t0)/G.T,0,1):1-G.remFrac;return Math.min(h,R[0]+(R[1]-R[0])*p);}
+  return h;}
 function pose(d,u){const H3=TUNE3.HOPS,UG=H3[H3.length-1][1];
   const s=1-Math.pow(1-u,2.4),x=d.x0+(d.slot[0]-d.x0)*s,z=d.z0+(d.slot[1]-d.z0)*s;let y=0.5,th,phi=0,yj=0;
   if(u<H3[0][1]){const k=u/H3[0][1];y+=(d.y0-0.5)*(1-k*k);}
@@ -465,12 +575,12 @@ function proj(p){if(!VP)return[cx,cy];const x=p[0],y=p[1],z=p[2],cw=VP[3]*x+VP[7
   return[((VP[0]*x+VP[4]*y+VP[8]*z+VP[12])/cw+1)/2*W,(1-(VP[1]*x+VP[5]*y+VP[9]*z+VP[13])/cw)/2*H];}
 function upd3D(gdt,rdt){
   tray+=(trayT-tray)*Math.min(1,(rdt||gdt)*7);if(trayT===0&&tray<0.003)tray=0;
-  updP3(gdt,rdt||gdt);
+  updP3(gdt,rdt||gdt);updFrags(gdt);
   if(!seq3)return;let allDone=true;
   for(const d of dice3){if(d.popFx&&gtime>=d.t0){d.popFx=false;chainFx(d);dust([d.from[0],0,d.from[1]],TUNE43.DUST_HOP,[1.2,2.4]);}
     if(gtime<d.t0){allDone=false;continue;}
     if(!d.settled){d.age+=gdt*1000;
-      if(seq3.held){const cap=d.T*Math.max(0.02,TUNE4.HOLD_U-d.idx*TUNE4.HOLD_STEP_U);if(d.age>cap){d.age=cap;d.phi0+=(rdt||0)*TUNE4.HOVER_SPIN;}}  // 원이 끝날 때까지 착지 직전에 머묾
+      if(seq3.held){const cap=d.T*holdCapU(d);if(d.age>cap){d.age=cap;d.phi0+=(rdt||0)*TUNE4.HOVER_SPIN;}}  // 방향 입력·원이 끝날 때까지 공중에 머묾
       const u=Math.min(1,d.age/d.T),H3=TUNE3.HOPS;
       for(let i=d.lastHop;i<H3.length;i++){if(u>=H3[i][1]){d.lastHop=i+1;const v=[1,0.6,0.32,0.14][i];SFX.clack(v);addTrauma(TUNE3.IMPACT_TRAUMA*v);
           dust([d.pos[0],0,d.pos[2]],Math.round(TUNE43.DUST_HOP*v)+1,[0.8+1.4*v,1.6+2.2*v]);}else break;}   // v4.3: 튕길 때마다 작은 먼지 구름
@@ -484,7 +594,7 @@ function upd3D(gdt,rdt){
     else if(gtime-d.setAt>=TUNE3.HILITE_DELAY_MS&&!d.lit&&seq3.revealAt!=null&&gtime>=seq3.revealAt){d.lit=true;
       if(d.crit){const s=proj([d.pos[0],0.5,d.pos[2]]);burst(s[0],s[1],TUNE.P_DIE_CRIT,PAL.perfect,360,{size:1,g:-60});wave(s[0],s[1],50,0.35,'255,211,74',3);SFX.gold();addTrauma(0.08);bloom=Math.max(bloom,0.3);}
       else if(d.ok)SFX.clack(0.12);}
-    if(d.lit){const k=Math.min(1,gdt*8);d.gold+=((d.crit?1:0)-d.gold)*k;d.hi+=((d.ok&&!d.crit?1:0)-d.hi)*k;d.dim+=((d.ok?0:1)-d.dim)*k;}
+    if(d.lit){const k=Math.min(1,gdt*8);d.gold+=((d.crit?1:0)-d.gold)*k;d.hi+=((d.ok&&!d.crit?1:0)-d.hi)*k;d.dim+=((d.ok?0:1)-d.dim)*k;if(!d.ok)updCrack(d);}   // v4.4 실패: 금 → 깨짐
     if(!d.lit)allDone=false;}
   // v4.2: 기본 눈 주사위(연쇄 제외)가 모두 멈추면 강화 순서를 정한다. 강화가 없으면 바로 결과 공개
   if(seq3.res&&!seq3.upPlan&&dice3.filter(d=>!d.chain).every(d=>d.settled)){seq3.upPlan=1;let k=0,end=gtime;
@@ -496,7 +606,7 @@ function upd3D(gdt,rdt){
     const dx=b.pos[0]-a.pos[0],dz=b.pos[2]-a.pos[2],dd=Math.hypot(dx,dz);
     if(dd<1.1&&dd>0.0001){const push=(1.1-dd)/2,nx=dx/dd,nz=dz/dd;if(!a.settled){a.pos[0]-=nx*push;a.pos[2]-=nz*push;}if(!b.settled){b.pos[0]+=nx*push;b.pos[2]+=nz*push;}
       const key=i+'_'+j;seq3.hit=seq3.hit||{};if(!seq3.hit[key]){seq3.hit[key]=1;SFX.clack(0.5);addTrauma(TUNE3.IMPACT_TRAUMA*0.6);}}}
-  if(seq3.doneAt&&!seq3.shownDmg&&gtime>=seq3.doneAt){seq3.shownDmg=true;showDmg(seq3.res,seq3.isCrit);}}
+  if(seq3.doneAt&&!seq3.shownDmg&&gtime>=seq3.doneAt){seq3.shownDmg=true;seq3.dmgAt=gtime;showDmg(seq3.res,seq3.isCrit);}}
 function render3D(now,rdt){if(!USE3D)return;
   if(tray<=0.001&&!dice3.length){if(glc.style.visibility!=='hidden'){gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);glc.style.visibility='hidden';}return;}
   glc.style.visibility='visible';const t0=performance.now();
@@ -507,9 +617,9 @@ function render3D(now,rdt){if(!USE3D)return;
   if(n){mx/=n;mz/=n;mu/=n;}const k=n?Math.pow(mu,1.6):1;
   let tc=[mx*0.5*(1-k),0,mz*0.55*(1-k)],te=[tc[0],D*(TUNE3.CAM_ROLL[0]+(TUNE3.CAM_END[0]-TUNE3.CAM_ROLL[0])*k),tc[2]+D*(TUNE3.CAM_ROLL[1]+(TUNE3.CAM_END[1]-TUNE3.CAM_ROLL[1])*k)];
   let f=Math.min(1,rdt*5*wscale);
-  if(seq3&&seq3.held&&n){tc=[mx*0.7,0.9,mz-0.3];te=[mx*0.7,D*TUNE4.HOLD_CAM[0],mz+D*TUNE4.HOLD_CAM[1]];f=Math.min(1,rdt*TUNE4.HOLD_CAM[2]);}  // v4: 2단계 동안 공중 주사위를 화면 가운데로 담음
+  if(seq3&&seq3.held&&n){tc=[mx*0.7,0.9,mz-0.3+TUNE45.RUN_CAM_DZ];te=[mx*0.7,D*TUNE4.HOLD_CAM[0],mz+D*TUNE4.HOLD_CAM[1]+TUNE45.RUN_CAM_DZ];f=Math.min(1,rdt*TUNE4.HOLD_CAM[2]);}  // v4.4: 공중 주사위를 화면 위·가운데로 (화살표는 아래)
   for(let i=0;i<3;i++){camE[i]+=(te[i]-camE[i])*f;camC[i]+=(tc[i]-camC[i])*f;}
-  if(seq3&&!seq3.camInit){seq3.camInit=1;camE=te.slice();camC=tc.slice();}
+  if(seq3&&!seq3.camInit&&n){seq3.camInit=1;camE=te.slice();camC=tc.slice();}   // v4.4: 주사위가 나온 첫 프레임에 맞춤
   VP=m4mul(m4persp(TUNE3.FOV*Math.PI/180,asp,0.5,80,TUNE3.LENS_SHIFT),m4look(camE,camC));
   gl.viewport(0,0,glc.width,glc.height);gl.clearColor(0,0,0,0);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.disable(gl.CULL_FACE);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
@@ -525,9 +635,10 @@ function render3D(now,rdt){if(!USE3D)return;
   // 그림자 + 치명 바닥 빛
   const B=G3.blob;gl.useProgram(B.p);gl.vertexAttribPointer(B.aQ,2,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(B.aQ);gl.uniformMatrix4fv(B.u.uVP,false,VP);
   const live=dice3.filter(d=>gtime>=d.t0);
-  for(const d of live){const hy=d.pos[1]-0.5,ox=0.42*hy+0.12,oz=-0.5*hy-0.1;
+  for(const d of live){if(d.broken)continue;const hy=d.pos[1]-0.5,ox=0.42*hy+0.12,oz=-0.5*hy-0.1;
     gl.uniform4f(B.u.uB,d.pos[0]+ox*1.4,d.pos[2]+oz*1.4,1.25+hy*0.5,0.002);gl.uniform4f(B.u.uCol,0,0,0,0.45*tray/(1+hy*0.8));gl.uniform1f(B.u.uSharp,2.2);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
     gl.uniform4f(B.u.uB,d.pos[0]+ox*0.5,d.pos[2]+oz*0.5,0.72+hy*0.3,0.003);gl.uniform4f(B.u.uCol,0,0,0,0.8*tray/(1+hy*3.0));gl.uniform1f(B.u.uSharp,3.0);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);}
+  for(const F of FR){const s=F.f.r*1.7;gl.uniform4f(B.u.uB,F.X[0]+0.05,F.X[2]-0.04,s,0.002);gl.uniform4f(B.u.uCol,0,0,0,0.6*tray/(1+F.X[1]*2));gl.uniform1f(B.u.uSharp,2.6);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);}   // v4.4 조각 그림자
   gl.blendFunc(gl.ONE,gl.ONE);
   for(const d of live){if(d.gold>0.01){const p=0.85+0.15*Math.sin(now/140);gl.uniform4f(B.u.uB,d.pos[0],d.pos[2],1.5,0.004);gl.uniform4f(B.u.uCol,1.0,0.62,0.18,0.55*d.gold*p);gl.uniform1f(B.u.uSharp,2.5);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);}
     if(d.chain&&!d.settled){gl.uniform4f(B.u.uB,d.pos[0],d.pos[2],1.1,0.004);gl.uniform4f(B.u.uCol,1.0,0.08,0.1,0.30);gl.uniform1f(B.u.uSharp,2.6);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);} // v4.1: 굴러오는 빨간 주사위 아래 붉은 빛
@@ -548,8 +659,20 @@ function render3D(now,rdt){if(!USE3D)return;
   gl.enableVertexAttribArray(P.aP);gl.vertexAttribPointer(P.aP,3,gl.FLOAT,false,24,0);gl.enableVertexAttribArray(P.aN);gl.vertexAttribPointer(P.aN,3,gl.FLOAT,false,24,12);
   gl.uniformMatrix4fv(P.u.uVP,false,VP);gl.uniform3f(P.u.uCam,camE[0],camE[1],camE[2]);gl.uniform1f(P.u.uTime,now/1000);
   gl.uniform3f(P.u.uTorch,tp[0],tp[1],tp[2]);gl.uniform1f(P.u.uFl,torchFl);gl.uniform1f(P.u.uTD,T4.TORCH_DIE);
-  for(const d of live){const fl=d.flashT!==undefined?Math.max(0,1-(gtime-d.flashT)/T4.FLASH_MS):0,up=Math.max(d.glow||0,fl*fl*1.6*T4.GLOW*(d.keep?T4.KEEP:1));
-    gl.uniformMatrix4fv(P.u.uM,false,m4qt(d.q,d.pos));gl.uniform1f(P.u.uGold,d.gold);gl.uniform1f(P.u.uDim,d.dim);gl.uniform1f(P.u.uHi,d.hi);gl.uniform1f(P.u.uRed,d.chain?1:0);gl.uniform1f(P.u.uUp,up);gl.drawElements(gl.TRIANGLES,G3.n,gl.UNSIGNED_SHORT,0);}
+  const T5=TUNE44,uSd=P.u['uSd[0]'];gl.uniform2f(P.u.uDF,T5.DIM_FAIL[0],T5.DIM_FAIL[1]);
+  const crkU=(c,co,pat,w)=>{gl.uniform1f(P.u.uCrk,c);if(c>0){gl.uniform3f(P.u.uCO,co[0],co[1],co[2]);gl.uniform1f(P.u.uNs,pat.ns);gl.uniform3fv(uSd,pat.sd);gl.uniform1f(P.u.uCW,w);}};
+  for(const d of live){if(d.broken)continue;const fl=d.flashT!==undefined?Math.max(0,1-(gtime-d.flashT)/T4.FLASH_MS):0,up=Math.max(d.glow||0,fl*fl*1.6*T4.GLOW*(d.keep?T4.KEEP:1));
+    const c=d.crk||0,tr=c>0&&c<1?T5.TREMOR*(1-c*0.5):0,ps=tr?[d.pos[0]+rnd(-tr,tr),d.pos[1],d.pos[2]+rnd(-tr,tr)]:d.pos;
+    crkU(c*T5.CRACK_REACH,d.co,d.pat,T5.CRACK_W[0]+(T5.CRACK_W[1]-T5.CRACK_W[0])*c);
+    gl.uniformMatrix4fv(P.u.uM,false,m4qt(d.q,ps));gl.uniform1f(P.u.uGold,d.gold);gl.uniform1f(P.u.uDim,d.dim);gl.uniform1f(P.u.uHi,d.hi);gl.uniform1f(P.u.uRed,d.chain?1:0);gl.uniform1f(P.u.uUp,up);gl.drawElements(gl.TRIANGLES,G3.n,gl.UNSIGNED_SHORT,0);}
+  // v4.4 깨진 조각 (조각 메시는 원래 주사위 좌표 그대로 → 조각 중심을 빼서 그린다. 바깥면은 금이 다 간 상태로)
+  if(FR.length){gl.uniform1f(P.u.uUp,0);gl.uniform1f(P.u.uGold,0);gl.uniform1f(P.u.uHi,0);let cur=null;
+    for(const F of FR){if(F.pat!==cur){cur=F.pat;gl.bindBuffer(gl.ARRAY_BUFFER,cur.vb);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,cur.ib);
+        gl.vertexAttribPointer(P.aP,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(P.aN,3,gl.FLOAT,false,24,12);}
+      crkU(T5.CRACK_REACH,F.co,F.pat,T5.CRACK_W[1]);const o=qRot(F.Q,F.f.c);
+      gl.uniformMatrix4fv(P.u.uM,false,m4qt(F.Q,[F.X[0]-o[0],F.X[1]-o[1],F.X[2]-o[2]]));gl.uniform1f(P.u.uDim,F.dim);gl.uniform1f(P.u.uRed,F.red);
+      gl.drawElements(gl.TRIANGLES,F.f.cnt,gl.UNSIGNED_SHORT,F.f.off*2);}}
+  gl.uniform1f(P.u.uCrk,0);
   gl.disableVertexAttribArray(P.aP);gl.disableVertexAttribArray(P.aN);
   // v4.3 구형 충격파 (주사위 중심에서 3D로 퍼지는 껍질)
   gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
@@ -572,7 +695,7 @@ function render3D(now,rdt){if(!USE3D)return;
     window.__v43.pts=n;}
   gl.depthMask(true);
   if(__v3.frames.length<2000)__v3.frames.push(performance.now()-t0);}
-function reset3D(){dice3=[];seq3=null;trayT=0;P3.length=0;SH3.length=0;}
+function reset3D(){dice3=[];seq3=null;trayT=0;P3.length=0;SH3.length=0;FR.length=0;}
 </script>
 <script>
 'use strict';
@@ -609,6 +732,15 @@ const TUNE4={
   RING_START_MUL:3.2,    // 접근 원 시작 크기(판정 고리의 배수)
   RING_MIN_R:24, DIRECT_HIT_PX:46,
 };
+// ================= v4.4 흐름: 탭 → 바로 던짐 → 공중(슬로우)에서 방향 입력 → 이어서 주사위별 원 → 착지 =================
+const TUNE45={
+  THROW_FAST_MS:260,     // 던진 직후 이 시간은 제 속도로 날아오르고, 그 뒤 슬로우
+  RUN_U:[0.035,0.125],   // 방향 입력 동안 주사위가 궤적에서 지나는 구간(시작 → 시간 막대 끝). 첫 착지 = 0.20. 막대와 함께 천천히 내려옴
+  RUN_CAM_DZ:1.1,        // 방향 입력·원 동안 카메라가 보는 점을 주사위보다 앞으로(+) → 주사위가 화면 위쪽에 보임
+  ARROW_BOTTOM:215,      // 화살표 줄을 화면 아래에서 이만큼 위에 (3D일 때. 2D 대체는 가운데)
+  CRIT_TO_S2_MS:220,     // 크리티컬 연출 → 원 단계 시작
+  TIMEOUT_TO_S2_MS:520,  // 시간 초과 표시 → 원 단계 시작
+};
 // ================= v4.1 상수 (빨간 연쇄 주사위 등장) =================
 const TUNE41={
   POP_DELAY_MS:140,      // 부모 6이 멈춘 뒤 빨간 주사위가 튀어나오기까지
@@ -644,7 +776,7 @@ const DIFF={
 };
 // 숨은 판정 데이터: 오팔 · 굴절 광선 → 갈고리 짐승 (v1~v3와 같음)
 const ATK={atk:4,acc:5,pow:5,pen:1,cd:2}, TGT={agi:3,tou:3,hp:8,sv:6,inv:0,df:2};
-const OPT={P:50,mode:1,penalty:0,direct:0,stage2:1};
+const OPT={P:50,mode:1,penalty:0,direct:0,stage2:1,shatter:1};
 
 // ================= 판정 (화면에는 숨김) =================
 function hitTarget(acc,agi){const d=acc-agi;if(d>=3)return 2;if(d>=1)return 3;if(d===0)return 4;if(d>=-2)return 5;return 6;}
@@ -726,6 +858,8 @@ const SFX={
   keep(){tone('triangle',660,560,0.14,0.07);noise(0.06,0.05,'lowpass',900);},   // v4.2 유지(약하게)
   chain(){noise(0.03,0.5,'highpass',5200,0,1.2);tone('square',2600,900,0.07,0.09);tone('sawtooth',1480,1470,0.16,0.07,0.01);tone('sine',260,70,0.16,0.45);noise(0.12,0.22,'bandpass',3400,0.015,4);},
   dmg(c){tone('sine',c?150:200,45,0.35,0.6);noise(0.08,0.35,'lowpass',900);if(c)tone('sawtooth',80,40,0.3,0.12);},
+  crack(v){v=v==null?1:v;noise(0.05,0.32*v,'bandpass',1500+Math.random()*700,0,5);noise(0.03,0.2*v,'highpass',4200,0.03);tone('square',190,70,0.05,0.05*v);},   // v4.4 돌 갈라지는 소리
+  shatter(){noise(0.2,0.42,'lowpass',1300);noise(0.07,0.3,'bandpass',2600,0,2);tone('sine',130,42,0.18,0.35);},             // v4.4 깨짐
 };
 
 // ================= 카메라 (트라우마 셰이크 + 줌 펀치) =================
@@ -769,16 +903,18 @@ function setWord(t,cls,popCls){word.className='txt '+(cls||'');word.textContent=
 function setHint(t){hint.textContent=t;}
 const DIRS={U:-90,R:0,D:90,L:180};
 function arrowSize(n){return Math.min(54,(W-32)/n-8);}
-function arrowXY(i,n){const s=arrowSize(n),g=8,tw=n*s+(n-1)*g;return[cx-tw/2+s/2+i*(s+g),cy];}
+function airCenter(){if(USE3D&&VP&&dice3.length){let sx=0,sy=0;for(const d of dice3){const p=proj(d.pos);sx+=p[0];sy+=p[1];}return[sx/dice3.length,sy/dice3.length];}return[cx,cy];}
+function arrowXY(i,n){const s=arrowSize(n),g=8,tw=n*s+(n-1)*g;return[cx-tw/2+s/2+i*(s+g),USE3D?H-TUNE45.ARROW_BOTTOM:cy];}
 
-// ---------- 1단계: 방향 입력 ----------
+// ---------- 1단계: 탭하면 바로 던지고, 주사위가 공중에 있는 동안 방향 입력 ----------
 function startRun(now){const D=DIFF[diff];
   G={D,seq:Array.from({length:D.n},()=>'UDLR'[(Math.random()*4)|0]),k:0,t0:now,T:D.T,mistakes:0,stunUntil:0,litAt:[],tier:null,remFrac:1,timeout:false,released:false};
   S2=null;dice=[];dieSeq=null;reset3D();labels.length=0;tension=0;cam.zoomT=1;
   dmgEl.style.opacity=0;dmgEl.className='txt';sumEl.innerHTML='';info.style.opacity=0;
   word.style.transition='';word.style.top=(cy-100)+'px';
   phase='run';pad.classList.remove('off');setWord('','');sub.textContent='';
-  setHint('방향키·WASD · 스와이프 · 아래 버튼 — 틀리면 처음부터');SFX.start();}
+  setHint('착지 전에 방향키·WASD · 스와이프 · 아래 버튼 — 틀리면 처음부터');SFX.start();
+  throwDice(now);}
 function dirInput(k,now){
   if(phase!=='run'||now<G.stunUntil)return;
   const n=G.seq.length,[bx,by]=arrowXY(G.k,n),s=arrowSize(n);
@@ -792,28 +928,31 @@ function dirInput(k,now){
   draw(now);}
 function completeRun(now){const rem=Math.max(0,G.T-(now-G.t0));G.remFrac=rem/G.T;
   const tier=G.remFrac>=TUNE4.CRIT2_FRAC?'crit2':'crit1';G.tier=tier;G.endAt=now;phase='end';
-  hitstopUntil=now+TUNE.HITSTOP_PERFECT;SFX.perfect();setWord('완성','cP','pop');sub.textContent=(rem/1000).toFixed(2)+'초 남김';
+  hitstopUntil=now+TUNE.HITSTOP_PERFECT;SFX.perfect();setWord('완성','cP','pop');sub.textContent=(rem/1000).toFixed(2)+'초 남김';pad.classList.add('off');
   slowUntil=now+TUNE.SLOWMO_MS;cam.zoomT=1+TUNE.ZOOM_TENSION*1.6;setTimeout(()=>critImpact(tier),TUNE.SLOWMO_MS);}
 function timeoutRun(now){G.timeout=true;G.tier='normal';G.endAt=now;G.remFrac=0;phase='end';
-  desat=1;SFX.fail();addTrauma(0.3);kick(-0.04);setWord('시간 초과','cF','pop');
+  desat=1;SFX.fail();addTrauma(0.3);kick(-0.04);setWord('시간 초과','cF','pop');pad.classList.add('off');
   sub.textContent=(OPT.penalty&&G.mistakes)?`실수 ${G.mistakes} → 명중 −${G.mistakes}`:'보너스 없음';
-  setTimeout(()=>{setWord('보통','cN big','pop');throwDice();},560);}
-function critImpact(tier){const now=performance.now(),big=tier==='crit2';
+  setTimeout(()=>{if(G&&phase==='end'){setWord('보통','cN big','pop');endStage1();}},TUNE45.TIMEOUT_TO_S2_MS);}
+function critImpact(tier){const now=performance.now(),big=tier==='crit2';const [cx,cy]=airCenter();   // v4.4: 공중 주사위 무리 한가운데서 터짐
   hitstopUntil=now+TUNE.HITSTOP_CRIT;addTrauma(TUNE.TRAUMA_CRIT*(big?1:0.75));kick(TUNE.ZOOM_PUNCH_CRIT*(big?1:0.7));
   bloom=big?1.3:1;bloomCol='255,205,90';
   burst(cx,cy,Math.round(TUNE.P_CRIT*(big?1:0.65)),PAL.crit,big?980:760,{size:1.3,life:1.2});
   wave(cx,cy,Math.hypot(W,H)*0.6,0.7,'255,211,74',big?10:7);wave(cx,cy,R*1.6,0.45,'255,255,255',3);
   SFX.crit();setWord(big?'크리티컬+':'크리티컬','cC big','popBig');sub.textContent='';cam.zoomT=1.02;
-  setTimeout(throwDice,380);}
+  setTimeout(()=>{if(G&&phase==='end')endStage1();},TUNE45.CRIT_TO_S2_MS);}
 
-// ---------- 던지기: 기본 눈은 여기서 정한다 ----------
-function throwDice(){const now=performance.now();
-  G.mods=modsOf(G.tier,(G.timeout&&OPT.penalty)?G.mistakes:0);G.base=Array.from({length:ATK.atk},R6);for(let i=0;i<Math.min(window.__force6|0,G.base.length);i++)G.base[i]=6;if(window.__forceBase)window.__forceBase.forEach((v,i)=>{if(v&&i<G.base.length)G.base[i]=v;});
-  G.s2on=!!OPT.stage2;G.P=OPT.P;G.mode=OPT.mode;G.direct=OPT.direct;G.throwAt=now;
-  phase='air';pad.classList.add('off');cam.zoomT=1;tension=0;SFX.swish();
+// ---------- 던지기: 탭한 순간. 기본 눈은 여기서 정한다 ----------
+function throwDice(now){
+  G.base=Array.from({length:ATK.atk},R6);for(let i=0;i<Math.min(window.__force6|0,G.base.length);i++)G.base[i]=6;if(window.__forceBase)window.__forceBase.forEach((v,i)=>{if(v&&i<G.base.length)G.base[i]=v;});
+  G.s2on=!!OPT.stage2;G.P=OPT.P;G.mode=OPT.mode;G.direct=OPT.direct;G.throwAt=now;G.thrown=true;SFX.swish();
+  if(USE3D){launch3D(G.base,true);sub.style.top=(H*0.085+50)+'px';}}   // 방향 입력·원이 끝날 때까지 공중에 머묾
+// ---------- 방향 입력이 끝나면(완성·시간 초과) 곧바로 주사위별 원 ----------
+function endStage1(){const now=performance.now();
+  G.mods=modsOf(G.tier,(G.timeout&&OPT.penalty)?G.mistakes:0);
+  phase='air';pad.classList.add('off');cam.zoomT=1;tension=0;
   setHint(G.s2on?(G.direct?'원이 안쪽 고리와 겹칠 때 그 주사위를 탭':'원이 안쪽 고리와 겹칠 때 아무 곳이나 탭 (키: Space)'):'');
-  if(USE3D)launch3D(G.base,G.s2on);
-  if(!G.s2on)doRelease(now);}
+  if(G.s2on)startS2(now);else doRelease(now);}
 // ---------- 2단계: 착지 전 주사위별 타이밍 원 ----------
 function startS2(now){const D=G.D;
   S2={D,t0:now,doneAt:0,rings:G.base.map((v,i)=>{const a=now+TUNE4.S2_LEAD_MS+i*D.gap;return{i,appear:a,close:a+D.close,res:null,off:null,at:0};})};
@@ -902,7 +1041,7 @@ function drawStage1(now,al){const n=G.seq.length,s=arrowSize(n),stun=now<G.stunU
     ctx.lineWidth=cur?2:1;ctx.strokeStyle=stun?'rgba(255,93,93,.8)':done?'rgba(255,211,74,.85)':cur?`rgba(255,255,255,${0.55+0.35*Math.sin(now/110)})`:'rgba(255,255,255,.14)';ctx.stroke();
     if(done){ctx.shadowColor='#ffb02e';ctx.shadowBlur=14;}
     arrowPath(s,DIRS[G.seq[i]]);ctx.fillStyle=stun?'#ff5d5d':done?'#ffd34a':cur?'#ffffff':'rgba(207,214,228,.42)';ctx.fill();ctx.shadowBlur=0;ctx.restore();}
-  const frac=phase==='run'?clamp(1-(now-G.t0)/G.T,0,1):G.remFrac,bw=Math.min(W*0.78,320),bh=8,bx=cx-bw/2,by=cy+s/2+24;
+  const frac=phase==='run'?clamp(1-(now-G.t0)/G.T,0,1):G.remFrac,bw=Math.min(W*0.78,320),bh=8,bx=cx-bw/2,by=arrowXY(0,n)[1]+s/2+24;
   rr(bx,by,bw,bh,4);ctx.fillStyle='rgba(255,255,255,.08)';ctx.fill();
   if(frac>0.004){rr(bx,by,Math.max(bh,bw*frac),bh,4);ctx.fillStyle=frac>=TUNE4.CRIT2_FRAC?'#ffd34a':frac>0.2?'#7fd4ff':'#ff5d5d';ctx.fill();}
   ctx.fillStyle='rgba(255,255,255,.5)';ctx.fillRect(bx+bw*TUNE4.CRIT2_FRAC-0.5,by-3,1,bh+6);
@@ -937,7 +1076,7 @@ function draw(now){ctx=ctx0;
   if(!USE3D&&dice.length){if(!stone2d){const c=stoneTex(512).a;stone2d=ctx.createPattern(c,'repeat');}   // v4.3 ?2d: 어두운 돌바닥 배경 (처음 한 번 생성)
     ctx.globalAlpha=0.55;ctx.fillStyle=stone2d;ctx.fillRect(0,0,W,H);ctx.globalAlpha=0.45;ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
   let a1=0;if(G&&phase==='run')a1=1;else if(G&&phase==='end')a1=clamp(1-(now-G.endAt-250)/450,0,1);
-  if(a1>0.01)drawStage1(now,a1);
+  if(a1>0.01&&!USE3D)drawStage1(now,a1);   // 3D일 때는 주사위 위 효과 캔버스에 그림(아래)
   for(const c of cracks){const a=1-c.t/c.dur;ctx.lineCap='round';ctx.lineJoin='round';
     for(const pass of [[`rgba(0,0,0,${0.6*a})`,4],[`rgba(255,190,190,${0.85*a})`,1.6]]){ctx.strokeStyle=pass[0];ctx.lineWidth=pass[1];
       for(const L of c.lines){ctx.beginPath();ctx.moveTo(L[0][0],L[0][1]);for(let i=1;i<L.length;i++)ctx.lineTo(L[i][0],L[i][1]);ctx.stroke();}}}
@@ -972,6 +1111,10 @@ function draw(now){ctx=ctx0;
   if(USE3D&&VP)for(const d of dice3){   // v4.3: 바닥 고리 없음 (효과는 3D 몸체에서)
     if(d.upCh>0||((d.lit||d.upDone)&&d.up)){const p=proj([d.pos[0],1.0,d.pos[2]-0.95]);if((d.lit||d.upDone)&&d.up)upMark(p[0],p[1],now,d.base,d.v);}}
   if(S2&&phase==='air')drawRings(now);
+  if(a1>0.01&&USE3D){ctx.globalCompositeOperation='source-over';drawStage1(now,a1);   // v4.4: 공중 주사위 위에 화살표·시간 막대·틀림 금
+    for(const c of cracks){const a=1-c.t/c.dur;ctx.lineCap='round';ctx.lineJoin='round';
+      for(const pass of [[`rgba(0,0,0,${0.6*a})`,4],[`rgba(255,190,190,${0.85*a})`,1.6]]){ctx.strokeStyle=pass[0];ctx.lineWidth=pass[1];
+        for(const L of c.lines){ctx.beginPath();ctx.moveTo(L[0][0],L[0][1]);for(let i=1;i<L.length;i++)ctx.lineTo(L[i][0],L[i][1]);ctx.stroke();}}}}
   drawLabels(now);
   if(bloom>0.01){ctx.globalCompositeOperation='lighter';const g=ctx.createRadialGradient(cx,cy,0,cx,cy,Math.hypot(W,H)*0.55);
     g.addColorStop(0,`rgba(${bloomCol},${Math.min(1,bloom)*0.75})`);g.addColorStop(0.35,`rgba(${bloomCol},${Math.min(1,bloom)*0.25})`);g.addColorStop(1,`rgba(${bloomCol},0)`);
@@ -984,7 +1127,7 @@ function draw(now){ctx=ctx0;
 // ================= 루프 =================
 let fpsLog=null;
 function frame(now){const rdt=Math.min(50,now-lastT)/1000;
-  const ts=now<hitstopUntil?0:(now<slowUntil?TUNE.SLOWMO_SCALE:(S2&&G&&!G.released?TUNE4.SLOW:1));
+  const ts=now<hitstopUntil?0:(now<slowUntil?TUNE.SLOWMO_SCALE:(G&&G.thrown&&!G.released&&now-G.throwAt>=TUNE45.THROW_FAST_MS?TUNE4.SLOW:1));   // v4.4: 던진 직후부터 착지 전까지 슬로우
   wscale=ts;const gdt=rdt*ts;lastT=now;gtime+=gdt*1000;
   updFx(gdt);updCam(rdt,now);
   if(phase==='run'&&now-G.t0>=G.T)timeoutRun(now);
