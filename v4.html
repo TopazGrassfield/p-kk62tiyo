@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#07080c">
-<title>LB v4.9 · 방향 입력 관문 + 원 결과 = 불타는 강화 + 탄환 장전 + 공격/방어</title>
+<title>LB v4.10 · 방향 입력 관문 + 카툰 불꽃 강화 + 아이콘 장전 + 공격/방어</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#07080c;color:#fff;overscroll-behavior:none;touch-action:none;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
@@ -213,6 +213,19 @@ const TUNE50={
   AMMO_Y:[0.835,0.790],             // 장전 칸 세로 위치(화면 높이 비율) [공격, 방어]
   BULLET_W:22, BULLET_GAP:7,        // 탄 크기·간격(px)
 };
+// v4.10 조절값: 스타일라이즈(카툰) 불꽃 · 아이콘 장전
+const TUNE51={
+  FLAME_RATE:[0,0.42,1.05,1.2],     // 프레임당 불꽃 혓바닥 수 [없음, 성공, 완벽, 완벽 투척]
+  FLAME_SIZE:[0,0.36,0.62,0.70],    // 혓바닥 크기(월드)
+  FLAME_LIFE:[0,0.36,0.46,0.48],    // 혓바닥 수명(초) — 끝으로 갈수록 작아지며 사라짐(흐려지지 않음)
+  FLAME_RISE:[0,0.9,1.3,1.4],       // 위로 오르는 속도
+  CHIP_P:[0,0.08,0.32,0.4],         // 프레임당 불똥 조각 확률
+  FLIP_FPS:12,                      // 모양이 바뀌는 플립북 속도
+  FLAME_BUDGET:160,                 // 불꽃 조각 상한 — 아이폰 성능
+  PERFECT_THROW_BLUE:0,             // 완벽 투척 불꽃 색: 0 = 금색(기본), 1 = 푸른색
+  SMOKE_PUFFS:3,                    // 불 꺼질 때 연기 덩어리 수
+  TOKEN:34, TOKEN_GAP:8, PER_ROW:8, // 장전 아이콘 크기·간격(px), 한 줄 최대 개수(넘으면 두 줄)
+};
 const DEBUG=/[?&]debug\b/.test(location.search);   // v4.9: 하단 요약 줄 등 디버그 글자는 ?debug일 때만
 // 원을 받는 주사위 수: 내림(성공률 × 주사위 수), 기준 미만이면 0. 줄 앞쪽(먼저 떨어지는 주사위)부터
 function ringCount(rate,n){return rate<TUNE49.GATE?0:Math.floor(rate*n+1e-9);}
@@ -372,6 +385,33 @@ const PT_VS=`attribute vec3 aP;attribute vec4 aC;attribute float aS;uniform mat4
 void main(){gl_Position=uVP*vec4(aP,1.0);gl_PointSize=clamp(abs(aS)*uK/gl_Position.w,1.0,200.0);vC=aC;vAdd=aS<0.0?1.0:0.0;}`;
 const PT_FS=`precision mediump float;varying vec4 vC;varying float vAdd;
 void main(){vec2 q=gl_PointCoord*2.0-1.0;float r=dot(q,q);if(r>1.0)discard;float f=mix((1.0-r)*(1.0-r),exp(-r*4.0),vAdd),a=vC.a*f;gl_FragColor=vec4(vC.rgb*a,a*(1.0-vAdd));}`;
+// v4.10 스타일라이즈 불꽃(점 빌보드): aC = (씨앗, 나이 0~1, 단계 1 성공·2 완벽·3 완벽 투척, 종류 0 혓바닥·1 불똥·2 연기)
+const FL_VS=`attribute vec3 aP;attribute vec4 aC;attribute float aS;uniform mat4 uVP;uniform float uK;varying vec4 vC;
+void main(){gl_Position=uVP*vec4(aP,1.0);gl_PointSize=clamp(aS*uK/gl_Position.w,1.0,256.0);vC=aC;}`;
+const FL_FS=`precision mediump float;varying vec4 vC;uniform float uTime,uFps,uBlue;
+float h1(float n){return fract(sin(n*127.1)*43758.5453);}
+void main(){vec2 q=gl_PointCoord*2.0-1.0;q.y=-q.y;float seed=vC.x,age=vC.y,lv=vC.z,kind=vC.w;
+ float fr=floor(uTime*uFps+seed*17.0),h=h1(fr+seed*31.0),h2=h1(fr*1.7+seed*13.0);   // 플립북: 12fps마다 모양이 바뀜
+ if(kind>1.5){   // 연기 덩어리: 둥근 혹 3개, 2단 회색 + 진한 테
+  float v=min(min(length(q-vec2(-0.32,-0.18))/0.52,length(q-vec2(0.3,-0.12))/0.5),length(q-vec2(0.0,0.26))/0.6);
+  v*=1.0+0.06*sin(atan(q.y,q.x)*5.0+h*6.28);if(v>1.0)discard;
+  vec3 c=v>0.86?vec3(0.16,0.15,0.16):(q.y-q.x*0.3>0.1?vec3(0.62,0.6,0.6):vec3(0.42,0.4,0.41));gl_FragColor=vec4(c*0.92,0.92);return;}
+ vec3 cO,cM,cC;   // 바깥 진한색 → 가운데 → 밝은 심
+ if(lv<1.5){cO=vec3(1.0,0.36,0.04);cM=vec3(1.0,0.78,0.16);cC=cM;}
+ else if(lv<2.5||uBlue<0.5){cO=lv<2.5?vec3(1.0,0.5,0.06):vec3(1.0,0.62,0.08);cM=vec3(1.0,0.86,0.28);cC=vec3(1.0,1.0,0.9);}
+ else{cO=vec3(0.2,0.45,1.0);cM=vec3(0.55,0.82,1.0);cC=vec3(1.0,1.0,1.0);}
+ if(kind>0.5){   // 불똥 조각: 끝이 뾰족한 마름모, 2단
+  float v=abs(q.x)/0.55+abs(q.y)/0.95;if(v>1.0)discard;gl_FragColor=vec4(v<0.55?cM:cO,1.0);return;}
+ // 혓바닥: 물방울 아래 둥근 몸 + 위로 가늘어지며 휘는 끝, 끝이 둘로 갈라짐
+ float lean=(h-0.5)*0.5,yy=q.y+0.35;q.x-=lean*max(yy,0.0)*max(yy,0.0)*0.6+0.12*sin(q.y*4.0+h2*6.28)*smoothstep(0.0,1.0,yy);
+ float t=clamp(yy/1.3,0.0,1.0),w=0.62*pow(1.0-t,1.15)+0.001;
+ float v=yy<0.0?length(vec2(q.x,yy))/0.62:abs(q.x)/w;
+ float fork=smoothstep(0.45,0.8,t)*(1.0-smoothstep(0.03,0.09+0.08*h,abs(q.x-(h2-0.5)*w*0.6)));v=max(v,fork*1.2);   // 끝 갈라짐
+ v*=1.0+0.07*sin(atan(yy,q.x)*6.0+h*6.28);
+ float cut=mix(1.0,0.0,age*age);if(v>cut)discard;   // 나이 들수록 줄어듦(흐려지지 않음)
+ float vi=v/cut+max(q.y,0.0)*0.35;   // 안쪽 띠는 아래로 몰림
+ vec3 c=vi>0.68?cO:(vi>0.38||lv<1.5?cM:cC);if(lv<1.5&&vi>0.9)c=cO*0.8;
+ gl_FragColor=vec4(c,1.0);}`;
 // v4.3 구형 충격파: 주사위 중심에서 퍼지는 껍질 (가장자리만 빛남, 바닥 아래는 버림)
 const SH_VS=`attribute vec3 aP;uniform mat4 uVP;uniform vec4 uS;varying vec3 vW,vN;void main(){vN=aP;vW=uS.xyz+aP*uS.w;gl_Position=uVP*vec4(vW,1.0);}`;
 const SH_FS=`precision mediump float;varying vec3 vW,vN;uniform vec3 uCam,uCol;uniform float uA,uT;
@@ -487,6 +527,7 @@ function init3D(){try{
     gl.generateMipmap(gl.TEXTURE_2D);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);return t;};
   const tex=mkT(ST.a),htex=mkT(ST.h);window.__stone2d=ST.a;
   const env=mkProg(ENV_VS,ENV_FS),pt=mkProg(PT_VS,PT_FS),sh=mkProg(SH_VS,SH_FS),EM=envMesh(),SM=sphereMesh(28,16);
+  const fl=mkProg(FL_VS,FL_FS);fl.aC=gl.getAttribLocation(fl.p,'aC');fl.aS=gl.getAttribLocation(fl.p,'aS');   // v4.10 카툰 불꽃
   env.aC=gl.getAttribLocation(env.p,'aC');env.aF=gl.getAttribLocation(env.p,'aF');pt.aC=gl.getAttribLocation(pt.p,'aC');pt.aS=gl.getAttribLocation(pt.p,'aS');
   const evb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,evb);gl.bufferData(gl.ARRAY_BUFFER,EM.V,gl.STATIC_DRAW);
   const eib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,eib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,EM.I,gl.STATIC_DRAW);
@@ -499,7 +540,7 @@ function init3D(){try{
     P.vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,P.vb);gl.bufferData(gl.ARRAY_BUFFER,P.V,gl.STATIC_DRAW);
     P.ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,P.ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,P.I,gl.STATIC_DRAW);FRP.push(P);}
   window.__v44.fracMs=Math.round(performance.now()-ft0);window.__v44.pieces=FRP.map(P=>P.fr.length);
-  G3={m,die,floor,blob,vb,ib,qb,tex,htex,n:m.I.length,env,pt,sh,evb,eib,en:EM.I.length,svb,sib,sn:SM.I.length,pvb};
+  G3={m,die,floor,blob,vb,ib,qb,tex,htex,n:m.I.length,env,pt,sh,fl,evb,eib,en:EM.I.length,svb,sib,sn:SM.I.length,pvb};
   glc.addEventListener('webglcontextlost',e=>{e.preventDefault();USE3D=false;glc.style.display='none';});
   USE3D=true;}catch(e){USE3D=false;if(glc)glc.style.display='none';console.warn('3D 주사위 끔 → 2D 대체:',e.message);}}
 function resize3D(){if(!USE3D)return;const d=Math.min(TUNE3.DPR_MAX,window.devicePixelRatio||1);glc.width=Math.round(innerWidth*d);glc.height=Math.round(innerHeight*d);}
@@ -614,22 +655,25 @@ function dust(C,n,sp){for(let i=0;i<n;i++){const a=rnd(0,PI2),s=rnd(sp[0],sp[1])
 // ---------- v4.9 불타는 강화: 원 결과 1 성공(주황·아래쪽) · 2 완벽(흰-금·전체) · 3 완벽 투척(푸른-흰) ----------
 let FIREN=0;
 const FIREPAL=[null,[[1,0.55,0.12],[1,0.36,0.05],[1,0.74,0.3]],[[1,0.95,0.75],[1,0.8,0.36],[1,0.62,0.18],[1,1,1]],[[0.62,0.8,1],[0.86,0.94,1],[0.42,0.6,1],[1,1,1]]];
-const FIREGLOW=[[0,0,0],[1.0,0.42,0.08],[1.0,0.78,0.38],[0.55,0.76,1.0]];
+const FIREGLOW=[[0,0,0],[1.0,0.42,0.08],[1.0,0.78,0.38],TUNE51.PERFECT_THROW_BLUE?[0.55,0.76,1.0]:[1.0,0.72,0.22]];   // v4.10: 완벽 투척 = 금색(상수로 푸른색)
 function igniteDie(d,lv){if(!d||d.broken)return;const up=!d.fire||lv>d.fire;if(!up)return;d.fire=lv;d.fireK=d.fireK||0.2;d.fireT=gtime;
-  const C=[d.pos[0],d.pos[1],d.pos[2]],P=FIREPAL[lv];sparks(C,lv===1?8:lv===2?22:26,P,lv===1?[1,2.6]:[2,5.5],0.9);   // 점화 순간 확 터짐
-  for(let i=0;i<(lv===1?6:16);i++){const v=rdir(),s=surf(v);p3(C[0]+s[0],C[1]+s[1],C[2]+s[2],v[0]*0.8,rnd(1,2.2),v[2]*0.8,rnd(0.3,0.5),P[(Math.random()*P.length)|0],0.95,TUNE50.FIRE_SIZE[lv]*1.4,0.03,1,1.5,1.4);P3[P3.length-1].fire=1;}}
-function fireFx(d,gdt){if(!d.fire||d.broken||gtime<d.t0)return;const T=TUNE50,lv=d.fire;
+  const C=[d.pos[0],d.pos[1],d.pos[2]],T=TUNE51;   // v4.10: 점화 순간 혓바닥이 한꺼번에 확 솟고 불똥 조각이 튐
+  for(let i=0;i<(lv===1?5:12);i++){const v=rdir(),s=surf(v);fl3(C[0]+s[0],C[1]+s[1]*0.6,C[2]+s[2],v[0]*0.7,rnd(1.2,2.4),v[2]*0.7,T.FLAME_LIFE[lv]*rnd(0.8,1.1),lv,1,T.FLAME_SIZE[lv]*1.3,T.FLAME_SIZE[lv]*0.6,1.5,1.4);}
+  for(let i=0;i<(lv===1?4:10);i++){const v=rdir();v[1]=Math.abs(v[1])+0.3;const s=rnd(1.5,lv===1?2.6:4.2);fl3(C[0]+v[0]*0.4,C[1]+v[1]*0.4,C[2]+v[2]*0.4,v[0]*s,v[1]*s,v[2]*s,rnd(0.35,0.6),lv,2,0.13,0.05,-7,1.8);}}
+// v4.10 카툰 불꽃 조각: kind 1 혓바닥 · 2 불똥 · 3 연기 (P3 안에 sty로 표시, 그리기는 FL 셰이더)
+function fl3(x,y,z,vx,vy,vz,life,lv,kind,s0,s1,g,dr){if(kind<3&&FIREN>=TUNE51.FLAME_BUDGET)return;FIREN++;p3(x,y,z,vx,vy,vz,life,[1,1,1],1,s0,s1,0,g,dr);const p=P3[P3.length-1];p.sty=kind;p.lv=lv;p.seed=Math.random();p.fire=1;}
+function fireFx(d,gdt){if(!d.fire||d.broken||gtime<d.t0)return;const T=TUNE51,lv=d.fire;
   d.fireK+=((d.fireOut?0:1)-d.fireK)*Math.min(1,gdt*(d.fireOut?14:5));
-  if(d.sc!=null&&d.sc<1)return;   // 탄으로 변신 중이면 새 불꽃 없음
-  const bt=d.fireBoostT!=null?gtime-d.fireBoostT:1e9,boost=bt<T.UP_BOOST_MS?1+T.UP_BOOST*(1-bt/T.UP_BOOST_MS):1;
-  let n=T.FIRE_RATE[lv]*d.fireK*boost*gdt*60;const P=FIREPAL[lv],sz=T.FIRE_SIZE[lv]*(boost>1?1.25:1);
-  while(n>0&&FIREN<T.FIRE_BUDGET){if(n<1&&Math.random()>n)break;n--;FIREN++;
-    const v=rdir();if(lv===1){v[1]=-Math.abs(v[1])*0.7-0.1;}const s=surf(v),k=lv===1?1.0:1.08;   // 성공: 몸체 아래쪽·모서리, 완벽: 몸체 전체
-    p3(d.pos[0]+s[0]*k,d.pos[1]+s[1]*k,d.pos[2]+s[2]*k,v[0]*0.25,rnd(0.5,1.1)*(lv===1?0.8:1.25),v[2]*0.25,T.FIRE_LIFE[lv]*rnd(0.7,1.2),P[(Math.random()*P.length)|0],0.85,sz*rnd(0.7,1.2),0.02,1,2.4,1.6);P3[P3.length-1].fire=1;}
-  if(Math.random()<T.EMBER_P[lv]*d.fireK*gdt*60&&FIREN<T.FIRE_BUDGET){const v=rdir(),s=surf(v);   // 불티
-    p3(d.pos[0]+s[0],d.pos[1]+s[1]+0.2,d.pos[2]+s[2],v[0]*0.9,rnd(1.6,3.2),v[2]*0.9,rnd(0.6,1.0),lv===3?[0.85,0.93,1]:[1,0.86,0.5],1,0.05,0.015,1,-1.2,0.8);P3[P3.length-1].fire=1;}}
-function fireOut(d){d.fireOut=true;const C=d.pos;SFX.fizz();
-  for(let i=0;i<TUNE50.SMOKE_N;i++){const v=rdir(),s=surf(v),L=rnd(0.22,0.34);p3(C[0]+s[0],C[1]+s[1]*0.6+0.2,C[2]+s[2],v[0]*0.3,rnd(0.5,1.1),v[2]*0.3,rnd(0.7,1.2),[L,L*0.95,L*0.92],0.55,rnd(0.18,0.3),rnd(0.6,0.9),0,0.6,1.4);}}   // 연기
+  if(d.fireOut||(d.sc!=null&&d.sc<1))return;   // 꺼짐·아이콘 변신 중이면 새 불꽃 없음
+  const bt=d.fireBoostT!=null?gtime-d.fireBoostT:1e9,boost=bt<TUNE50.UP_BOOST_MS?1+TUNE50.UP_BOOST*(1-bt/TUNE50.UP_BOOST_MS):1;   // 강화 끝 = 불꽃이 확 커짐
+  let n=T.FLAME_RATE[lv]*d.fireK*boost*gdt*60;const sz=T.FLAME_SIZE[lv]*(boost>1?1.3:1);
+  while(n>0){if(n<1&&Math.random()>n)break;n--;
+    const v=rdir();if(lv===1)v[1]=-Math.abs(v[1])*0.6-0.2;else v[1]=v[1]*0.6-0.1;const s=surf(v);   // 성공: 몸체 아래쪽·모서리, 완벽: 몸체 전체를 감쌈
+    fl3(d.pos[0]+s[0]*1.02,d.pos[1]+s[1]+sz*0.25,d.pos[2]+s[2]*1.02,v[0]*0.2,T.FLAME_RISE[lv]*rnd(0.7,1.2),v[2]*0.2,T.FLAME_LIFE[lv]*rnd(0.75,1.15),lv,1,sz*rnd(0.8,1.15),sz*0.35,0.8,2.2);}
+  if(Math.random()<T.CHIP_P[lv]*d.fireK*gdt*60){const v=rdir(),s=surf(v);   // 위로 뜯겨 나가는 불똥 조각
+    fl3(d.pos[0]+s[0],d.pos[1]+0.5,d.pos[2]+s[2],v[0]*0.5,rnd(1.6,2.8),v[2]*0.5,rnd(0.5,0.8),lv,2,rnd(0.09,0.14),0.03,-0.8,1.0);}}
+function fireOut(d){d.fireOut=true;const C=d.pos;SFX.fizz();   // v4.10: 카툰 연기 덩어리 2~3개 → 깨짐
+  for(let i=0;i<TUNE51.SMOKE_PUFFS;i++){const a=rnd(0,PI2);fl3(C[0]+Math.cos(a)*0.25,C[1]+0.35+i*0.12,C[2]+Math.sin(a)*0.25,Math.cos(a)*0.35,rnd(0.7,1.1),Math.sin(a)*0.35,rnd(0.8,1.1),d.fire,3,rnd(0.5,0.65),rnd(0.75,0.95),0.2,1.6);}}
 function fireCol(d){const lv=d.fire||0,g=lv?TUNE50.FIRE_GLOW[lv]*(d.fireK||0):0,c=FIREGLOW[lv],w=d.sc!=null&&d.sc<1?(1-d.sc)*2.2:0;   // 탄 변신: 하얗게 빛남
   return[c[0]*g+w,c[1]*g+w,c[2]*g+w];}
 function updP3(gdt,rdt){FIREN=0;for(let i=P3.length-1;i>=0;i--){const p=P3[i],dt=p.real?rdt:gdt;p.t+=dt;if(p.t>=p.max){P3.splice(i,1);continue;}if(p.fire)FIREN++;
@@ -859,12 +903,18 @@ function render3D(now,rdt){if(!USE3D)return;
     for(const m of MOTES){const dx=m.x-tp[0],dy=m.y-tp[1],dz=m.z-tp[2],lt=0.25+2.2*torchFl/(1+0.12*(dx*dx+dy*dy+dz*dz)),tw=0.6+0.4*Math.sin(m.ph*3);
       put(m.x,m.y,m.z,1.0*lt,0.8*lt,0.6*lt,0.4*tray*tw,-m.s);}
     put(tp[0],tp[1]+0.12,tp[2],1.0,0.55,0.2,0.55*tray*torchFl,-1.6);put(tp[0],tp[1]+0.08,tp[2],1.0,0.8,0.5,0.8*tray*torchFl,-0.45);
-    for(const p of P3){if(n>=T4.MAX_PT+T4.MOTES+6)break;const u=p.t/p.max,a=p.a*(p.add?(1-u):(u<0.15?u/0.15:(1-u)/0.85))*tray;put(p.x,p.y,p.z,p.c[0],p.c[1],p.c[2],a,(p.s0+(p.s1-p.s0)*u)*(p.add?-1:1));}
+    for(const p of P3){if(p.sty)continue;if(n>=T4.MAX_PT+T4.MOTES+6)break;const u=p.t/p.max,a=p.a*(p.add?(1-u):(u<0.15?u/0.15:(1-u)/0.85))*tray;put(p.x,p.y,p.z,p.c[0],p.c[1],p.c[2],a,(p.s0+(p.s1-p.s0)*u)*(p.add?-1:1));}
+    const n0=n;   // v4.10: 카툰 불꽃 조각은 뒤에 모아 별도 셰이더로
+    for(const p of P3){if(!p.sty)continue;if(n>=T4.MAX_PT+T4.MOTES+6)break;const u=p.t/p.max;put(p.x,p.y,p.z,p.seed,u,p.lv,p.sty-1,(p.s0+(p.s1-p.s0)*u)*(tray>0.5?1:tray*2));}
     if(n){const Q=G3.pt;gl.useProgram(Q.p);gl.bindBuffer(gl.ARRAY_BUFFER,G3.pvb);gl.bufferSubData(gl.ARRAY_BUFFER,0,A.subarray(0,n*8));
-      gl.enableVertexAttribArray(Q.aP);gl.vertexAttribPointer(Q.aP,3,gl.FLOAT,false,32,0);gl.enableVertexAttribArray(Q.aC);gl.vertexAttribPointer(Q.aC,4,gl.FLOAT,false,32,12);gl.enableVertexAttribArray(Q.aS);gl.vertexAttribPointer(Q.aS,1,gl.FLOAT,false,32,28);
-      gl.uniformMatrix4fv(Q.u.uVP,false,VP);gl.uniform1f(Q.u.uK,glc.height/(2*th));gl.drawArrays(gl.POINTS,0,n);
+      if(n0){gl.enableVertexAttribArray(Q.aP);gl.vertexAttribPointer(Q.aP,3,gl.FLOAT,false,32,0);gl.enableVertexAttribArray(Q.aC);gl.vertexAttribPointer(Q.aC,4,gl.FLOAT,false,32,12);gl.enableVertexAttribArray(Q.aS);gl.vertexAttribPointer(Q.aS,1,gl.FLOAT,false,32,28);
+      gl.uniformMatrix4fv(Q.u.uVP,false,VP);gl.uniform1f(Q.u.uK,glc.height/(2*th));gl.drawArrays(gl.POINTS,0,n0);
       gl.disableVertexAttribArray(Q.aP);gl.disableVertexAttribArray(Q.aC);gl.disableVertexAttribArray(Q.aS);}
-    window.__v43.pts=n;}
+      if(n>n0){const F=G3.fl;gl.useProgram(F.p);gl.depthMask(true);
+        gl.enableVertexAttribArray(F.aP);gl.vertexAttribPointer(F.aP,3,gl.FLOAT,false,32,0);gl.enableVertexAttribArray(F.aC);gl.vertexAttribPointer(F.aC,4,gl.FLOAT,false,32,12);gl.enableVertexAttribArray(F.aS);gl.vertexAttribPointer(F.aS,1,gl.FLOAT,false,32,28);
+        gl.uniformMatrix4fv(F.u.uVP,false,VP);gl.uniform1f(F.u.uK,glc.height/(2*th));gl.uniform1f(F.u.uTime,gtime/1000);gl.uniform1f(F.u.uFps,TUNE51.FLIP_FPS);gl.uniform1f(F.u.uBlue,TUNE51.PERFECT_THROW_BLUE);
+        gl.drawArrays(gl.POINTS,n0,n-n0);gl.disableVertexAttribArray(F.aP);gl.disableVertexAttribArray(F.aC);gl.disableVertexAttribArray(F.aS);gl.depthMask(false);}}
+    window.__v43.pts=n;window.__flames=n-n0;}
   gl.depthMask(true);
   if(__v3.frames.length<2000)__v3.frames.push(performance.now()-t0);}
 function reset3D(){dice3=[];seq3=null;trayT=0;P3.length=0;SH3.length=0;FR.length=0;}
@@ -1063,6 +1113,8 @@ const SFX={
   fizz(){noise(0.3,0.16,'highpass',5200,0,0.5);noise(0.2,0.08,'lowpass',600);},   // v4.9 불 꺼짐(치익)
   morph(){tone('sine',900,1800,0.09,0.06);},   // v4.9 주사위 → 탄 수축
   load(big){noise(0.025,0.42,'highpass',4200);tone('square',1900,700,0.03,0.07);noise(0.05,0.3,'bandpass',1100,0.035,4);tone('sine',200,90,0.06,0.3,0.035);if(big)tone('triangle',1760,1760,0.14,0.07,0.05);},   // v4.9 철컥
+  swordLand(big){noise(0.16,0.2,'highpass',5600,0,0.6);tone('triangle',big?2350:1980,big?2350:1980,big?0.3:0.18,0.09,0.02);tone('sine',big?3520:2960,big?3520:2960,0.12,0.05,0.025);if(big)tone('sine',1175,1175,0.35,0.06,0.03);},   // v4.10 칼: 스릉-챙
+  shieldLand(big){tone('sine',150,62,0.16,0.42);noise(0.06,0.32,'lowpass',520,0,1);if(big)tone('triangle',880,880,0.22,0.06,0.03);},   // v4.10 방패: 쿵 (금테 = 쿵+울림)
 };
 
 // ================= 카메라 (트라우마 셰이크 + 줌 펀치) =================
@@ -1234,67 +1286,62 @@ function updDice(now,gdt,rdt){if(USE3D){upd3D(gdt,rdt);return;}if(!dieSeq)return
     if(now-d.lastSw>55){d.shown=1+((Math.random()*6)|0);d.lastSw=now;}}
   if(!dieSeq.shownDmg&&now>=dieSeq.doneAt){dieSeq.shownDmg=true;showDmg(dieSeq.res,dieSeq.isCrit);}}
 function showDmg(res,isCrit){const c=res.dice.some(d=>d.crit&&d.ok);
-  if(res.def){dmgEl.innerHTML=(res.dmg>0?'−'+res.dmg:'막음')+`<small>막은 공격 ${res.blocked} / ${res.total} · 받은 피해 ${res.dmg} · 오팔 체력 ${ME.hp} → ${res.hpAfter}</small>`;
+  if(res.def&&DEBUG){dmgEl.innerHTML=(res.dmg>0?'−'+res.dmg:'막음')+`<small>막은 공격 ${res.blocked} / ${res.total} · 받은 피해 ${res.dmg} · 오팔 체력 ${ME.hp} → ${res.hpAfter}</small>`;   // v4.10: 숫자는 ?debug일 때만
     dmgEl.className='txt '+(res.dmg>0?'norm':'shield');
     void dmgEl.offsetWidth;dmgEl.classList.add('popBig');dmgEl.style.opacity='';}
   word.style.transition='transform .25s';
   if(USE3D)dmgEl.style.top=(H*0.15)+'px';else word.style.top=(cy-R*0.55)+'px';
-  if(res.def){SFX.dmg(c);addTrauma(TUNE.TRAUMA_DMG*(c?1:0.6));kick(c?0.08:0.04);bloom=Math.max(bloom,c?0.5:0.15);}   // 공격 피해 타격감은 탄 장전이 끝난 순간(ammoTotal)
-  startAmmo(res);
+  startAmmo(res);   // 타격감(SFX.dmg·흔들림)은 아이콘이 다 놓인 순간
   const att=res.dice.filter(d=>!d.chain).map(d=>d.up?`<b>${d.base}→${d.v}▲</b>`:`${d.base}→${d.v}`).join(' · ');
   const ch=res.dice.filter(d=>d.chain).map(d=>d.v);
   sumEl.innerHTML=DEBUG?(res.def?'방어 · ':'')+(G.s2on?'기본 눈 → 최종 눈 ':'2단계 끔 · 눈 ')+att+(ch.length?` <i style="color:#ff4d5e;font-weight:800">+연쇄 ${ch.join(',')}</i>`:''):'';   // v4.9: 요약 줄은 ?debug일 때만
   window.__games.push({side:SIDE,tier:G.tier,timeout:G.timeout,mistakes:G.mistakes,accMod:G.mods.accMod,s2:G.results.join(''),offs:G.offs,base:G.base.join(''),fin:res.dice.filter(d=>!d.chain).map(d=>d.v).join(''),chain:ch.join(''),dmg:res.dmg,blocked:res.blocked,total:res.total,hpAfter:res.hpAfter,hits:G.hits,nArrow:G.seq.length,ringN:G.ringN,gateFail:!!G.gateFail,critP:!!G.critP,critTs:(G.mods.critTs||[]).join(''),tried:G.tried,
-    ammo:AMMO.items.length,ammoOk:res.dice.filter(d=>d.ok).length,ammoX:AMMO.items.filter(b=>b.x).length,ammoSum:AMMO.sum,fires:USE3D?dice3.map(d=>d.fire||0).join(''):''});
+    ammo:AMMO.items.length,ammoOk:res.dice.filter(d=>d.ok).length,ammoCrit:AMMO.items.filter(b=>b.crit).length,ammoChain:AMMO.items.filter(b=>b.chain).length,fires:USE3D?dice3.map(d=>d.fire||0).join(''):''});
   setTimeout(endAll,250);}
 // ---------- v4.9 장전: 성공 주사위 → 탄환(공격) / 방패 토큰(방어), 줄 순서로 날아가 아래 칸에 꽂힘 ----------
 let AMMO={items:[],sum:0};
+// v4.10: 꽂히는 것은 숫자 없는 아이콘 토큰(공격 = 칼, 방어 = 방패). 실패 자리·✕·합계 없음
 function startAmmo(res){const T=TUNE50,t0=performance.now()+T.AMMO_START_MS,items=[];let k=0;
-  res.dice.forEach((d,i)=>{if(!d.ok)return;items.push({i,crit:!!d.crit,chain:!!d.chain,dmg:res.def?0:(d.crit?res.dc:res.dn),at:t0+k*T.AMMO_STAG_MS,landed:false,x:false});k++;});
-  if(!res.def){let bc=res.blkC||0,bn=res.blkN||0;   // 막힌 탄: 같은 종류 중 뒤에서부터 ✕
-    for(let j=items.length-1;j>=0;j--){const b=items[j];if(b.crit&&bc>0){b.x=true;bc--;}else if(!b.crit&&bn>0){b.x=true;bn--;}}}
+  res.dice.forEach((d,i)=>{if(!d.ok)return;items.push({i,crit:!!d.crit,chain:!!d.chain,at:t0+k*T.AMMO_STAG_MS,landed:false});k++;});
   const n=items.length,lastAt=n?items[n-1].at+T.AMMO_SHRINK_MS+T.AMMO_FLY_MS:t0;
-  AMMO={items,def:!!res.def,dmg:res.dmg,sum:items.filter(b=>!b.x).reduce((s,b)=>s+b.dmg,0),t0,lastAt,xAt:lastAt+T.AMMO_BLOCK_GAP_MS,totAt:lastAt+T.AMMO_BLOCK_GAP_MS+(items.some(b=>b.x)?320:0),totDone:false};
-  if(!res.def&&AMMO.sum!==res.dmg)console.error('탄 합계 불일치',AMMO.sum,res.dmg);}
-function ammoSlot(j){const T=TUNE50,n=AMMO.items.length,w=T.BULLET_W+T.BULLET_GAP,tw=AMMO.def?n*w:n*w+120;   // 공격: 오른쪽에 합계 자리
-  return[cx-tw/2+j*w+T.BULLET_W/2,H*T.AMMO_Y[AMMO.def?1:0]];}
+  AMMO={items,def:!!res.def,t0,lastAt,totAt:lastAt+120,totDone:false};
+  if(!res.def&&DEBUG){const s=items.reduce((a,b)=>a+(b.crit?res.dc:res.dn),0);if(s!==res.dmg)console.error('아이콘 피해 합 불일치',s,res.dmg);}}
+function ammoRows(){const T=TUNE51,n=AMMO.items.length;return n>T.PER_ROW?2:1;}
+function ammoSlot(j){const T=TUNE51,n=AMMO.items.length,rows=ammoRows(),per=Math.ceil(n/rows),row=Math.floor(j/per),col=j-row*per,inRow=row<rows-1?per:n-per*(rows-1),w=T.TOKEN+T.TOKEN_GAP;
+  const y=H*TUNE50.AMMO_Y[AMMO.def?1:0]-(rows-1)*w*0.5+row*w;return[cx-(inRow*w)/2+col*w+w/2,y];}
 function dieScreen(i){if(USE3D){const d=dice3[i];return d?proj([d.pos[0],d.pos[1],d.pos[2]]):[cx,cy];}const d=dice[i];return d?[d.x1,d.y1]:[cx,cy];}
-function drawBullet(x,y,b,a,now){const T=TUNE50,w=T.BULLET_W,h=w*1.9;ctx.save();ctx.translate(x,y);ctx.globalAlpha=a;
-  if(AMMO.def){const r=w*0.62;ctx.beginPath();ctx.moveTo(0,-r*1.15);ctx.quadraticCurveTo(r*1.1,-r*0.95,r,-r*0.2);ctx.quadraticCurveTo(r*0.85,r*0.8,0,r*1.2);ctx.quadraticCurveTo(-r*0.85,r*0.8,-r,-r*0.2);ctx.quadraticCurveTo(-r*1.1,-r*0.95,0,-r*1.15);ctx.closePath();   // 방패 토큰
-    const g=ctx.createLinearGradient(0,-r,0,r);if(b.crit){g.addColorStop(0,'#fff1a8');g.addColorStop(1,'#d88a10');}else{g.addColorStop(0,'#e9eef5');g.addColorStop(1,'#7c8796');}
-    ctx.fillStyle=g;ctx.shadowColor=b.crit?'#ffd34a':'#9fb4d0';ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;ctx.lineWidth=b.crit?2.4:1.4;ctx.strokeStyle=b.crit?'#ffe58a':'#4b5563';ctx.stroke();
-    ctx.restore();return;}
-  const bw=w*0.62,cw=w*0.72,tip=h*0.36;   // 탄: 위 탄두 + 아래 탄피
-  const gB=ctx.createLinearGradient(-bw/2,0,bw/2,0);if(b.crit){gB.addColorStop(0,'#fff6c8');gB.addColorStop(0.5,'#ffcf3a');gB.addColorStop(1,'#b8740c');}else{gB.addColorStop(0,'#f4f7fb');gB.addColorStop(0.5,'#b9c2ce');gB.addColorStop(1,'#6d7684');}
-  ctx.fillStyle=gB;ctx.beginPath();ctx.moveTo(-bw/2,-h/2+tip);ctx.quadraticCurveTo(-bw/2,-h/2,0,-h/2);ctx.quadraticCurveTo(bw/2,-h/2,bw/2,-h/2+tip);ctx.closePath();ctx.fill();
-  const gC=ctx.createLinearGradient(-cw/2,0,cw/2,0);if(b.crit){gC.addColorStop(0,'#ffe28a');gC.addColorStop(1,'#9a5a06');}else{gC.addColorStop(0,'#d7dde6');gC.addColorStop(1,'#596270');}
-  ctx.fillStyle=gC;rr(-cw/2,-h/2+tip,cw,h-tip,2);ctx.fill();
-  if(b.chain){ctx.lineWidth=2.2;ctx.strokeStyle='#ff3b4e';ctx.shadowColor='#ff3b4e';ctx.shadowBlur=8;rr(-cw/2,-h/2+tip,cw,h-tip,2);ctx.stroke();ctx.shadowBlur=0;}   // 연쇄에서 온 탄: 빨간 탄피 테두리
-  if(b.crit){ctx.globalCompositeOperation='lighter';ctx.globalAlpha=a*(0.35+0.15*Math.sin(now/120));ctx.fillStyle='#ffd34a';ctx.beginPath();ctx.arc(0,0,w*0.7,0,PI2);ctx.fill();ctx.globalCompositeOperation='source-over';ctx.globalAlpha=a;}
-  ctx.fillStyle=b.crit?'#3a2300':'#1b2029';ctx.font=`900 ${Math.round(w*0.56)}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(String(b.dmg),0,-h/2+tip+(h-tip)*0.52);
+function swordPath(s){const b=s*0.085;ctx.beginPath();   // 위로 선 칼: 칼끝 · 날 · 코등이 · 손잡이 · 손잡이 끝
+  ctx.moveTo(0,-s*0.44);ctx.lineTo(b,-s*0.32);ctx.lineTo(b,s*0.1);ctx.lineTo(s*0.22,s*0.1);ctx.lineTo(s*0.22,s*0.17);ctx.lineTo(s*0.05,s*0.17);ctx.lineTo(s*0.05,s*0.33);
+  ctx.arc(0,s*0.37,s*0.065,-Math.PI*0.25,Math.PI*1.25);ctx.lineTo(-s*0.05,s*0.33);ctx.lineTo(-s*0.05,s*0.17);ctx.lineTo(-s*0.22,s*0.17);ctx.lineTo(-s*0.22,s*0.1);ctx.lineTo(-b,s*0.1);ctx.lineTo(-b,-s*0.32);ctx.closePath();}
+function shieldPath(s){const r=s*0.36;ctx.beginPath();ctx.moveTo(0,-r*1.05);ctx.quadraticCurveTo(r*0.55,-r*0.75,r,-r*0.85);ctx.lineTo(r*0.95,-r*0.1);ctx.quadraticCurveTo(r*0.85,r*0.75,0,r*1.15);ctx.quadraticCurveTo(-r*0.85,r*0.75,-r*0.95,-r*0.1);ctx.lineTo(-r,-r*0.85);ctx.quadraticCurveTo(-r*0.55,-r*0.75,0,-r*1.05);ctx.closePath();}
+function drawToken(x,y,b,sc,now){const s=TUNE51.TOKEN*sc;if(s<1)return;ctx.save();ctx.translate(x,y);   // v4.10 아이콘 토큰 (숫자 없음)
+  const gold=b.crit,pul=0.75+0.25*Math.sin(now/130+b.i);
+  rr(-s/2,-s/2,s,s,s*0.22);ctx.fillStyle=b.chain?'#4a0a12':'#14171f';ctx.fill();   // 바탕: 주사위 윗면 같은 판, 연쇄 = 빨간 바탕
+  ctx.lineWidth=b.chain?2.6:gold?2.2:1.4;ctx.strokeStyle=b.chain?'#ff3b4e':gold?'#ffd34a':'rgba(160,172,192,.7)';if(b.chain||gold){ctx.shadowColor=b.chain?'#ff3b4e':'#ffb020';ctx.shadowBlur=10*pul;}ctx.stroke();ctx.shadowBlur=0;
+  if(gold){ctx.globalCompositeOperation='lighter';const g=ctx.createRadialGradient(0,0,0,0,0,s*0.6);g.addColorStop(0,`rgba(255,200,60,${0.45*pul})`);g.addColorStop(1,'rgba(255,200,60,0)');ctx.fillStyle=g;ctx.fillRect(-s*0.6,-s*0.6,s*1.2,s*1.2);ctx.globalCompositeOperation='source-over';}
+  if(AMMO.def){shieldPath(s);const g=ctx.createLinearGradient(0,-s*0.4,0,s*0.4);g.addColorStop(0,'#eef2f8');g.addColorStop(1,'#8892a2');ctx.fillStyle=g;ctx.fill();   // 방패: 은, 치명 = 금테
+    ctx.lineWidth=gold?s*0.09:s*0.04;ctx.strokeStyle=gold?'#ffcf3a':'#4b5563';if(gold){ctx.shadowColor='#ffb020';ctx.shadowBlur=8*pul;}ctx.stroke();ctx.shadowBlur=0;
+    ctx.strokeStyle='rgba(75,85,99,.55)';ctx.lineWidth=s*0.035;ctx.beginPath();ctx.moveTo(0,-s*0.3);ctx.lineTo(0,s*0.32);ctx.stroke();}
+  else{swordPath(s);const g=ctx.createLinearGradient(-s*0.1,0,s*0.1,0);   // 칼: 은/흰, 치명 = 빛나는 금
+    if(gold){g.addColorStop(0,'#fff6c8');g.addColorStop(0.5,'#ffcf3a');g.addColorStop(1,'#c07a0c');ctx.shadowColor='#ffd34a';ctx.shadowBlur=12*pul;}else{g.addColorStop(0,'#ffffff');g.addColorStop(0.5,'#d4dae4');g.addColorStop(1,'#8a93a3');}
+    ctx.fillStyle=g;ctx.fill();ctx.shadowBlur=0;ctx.lineWidth=1;ctx.strokeStyle=gold?'#7a4a00':'#3a414e';ctx.stroke();}
   ctx.restore();}
-function drawAmmo(now){if(!AMMO.items.length&&!AMMO.t0)return;const T=TUNE50;if(!AMMO.items.length&&AMMO.def)return;
+function drawAmmo(now){if(!AMMO.items.length)return;const T=TUNE50,T1=TUNE51;
   const ease=k=>1-Math.pow(1-k,3);
-  // 칸 바탕
-  if(now>=AMMO.t0-120){const n=AMMO.items.length,a=clamp((now-AMMO.t0+120)/200,0,1),[x0,y]=ammoSlot(0),w=T.BULLET_W+T.BULLET_GAP;
-    if(n){ctx.globalAlpha=a*0.55;ctx.fillStyle='rgba(8,10,16,.85)';rr(x0-w/2-4,y-T.BULLET_W*1.25,n*w+8,T.BULLET_W*2.5,8);ctx.fill();ctx.globalAlpha=a*0.35;ctx.strokeStyle='#5b6578';ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;}}
+  if(now>=AMMO.t0-120){const n=AMMO.items.length,rows=ammoRows(),per=Math.ceil(n/rows),a=clamp((now-AMMO.t0+120)/200,0,1),w=T1.TOKEN+T1.TOKEN_GAP,[,y0]=ammoSlot(0);   // 칸 바탕(성공한 것만 들어갈 길이)
+    ctx.globalAlpha=a*0.55;ctx.fillStyle='rgba(8,10,16,.85)';rr(cx-per*w/2-6,y0-w/2-4,per*w+12,rows*w+8,10);ctx.fill();ctx.globalAlpha=a*0.35;ctx.strokeStyle='#5b6578';ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;}
   AMMO.items.forEach((b,j)=>{const t=now-b.at;if(t<0)return;
     if(t<T.AMMO_SHRINK_MS){const k=t/T.AMMO_SHRINK_MS;if(USE3D){const d=dice3[b.i];if(d)d.sc=1-ease(k);}else{const d=dice[b.i];if(d)d.sc=1-ease(k);}   // 주사위가 빛나며 수축
       if(!b.fx){b.fx=1;SFX.morph();}return;}
     if(USE3D){const d=dice3[b.i];if(d)d.sc=0;}else{const d=dice[b.i];if(d)d.sc=0;}
     const [sx,sy]=b.from||(b.from=dieScreen(b.i)),[tx,ty]=ammoSlot(j),k=clamp((t-T.AMMO_SHRINK_MS)/T.AMMO_FLY_MS,0,1),e=ease(k);
-    if(k>=1&&!b.landed){b.landed=true;b.landAt=now;SFX.load(b.crit);addTrauma(0.05);burst(tx,ty,6,b.crit?PAL.perfect:PAL.ok,160,{g:200,size:0.8});}
+    if(k>=1&&!b.landed){b.landed=true;b.landAt=now;(AMMO.def?SFX.shieldLand:SFX.swordLand)(b.crit);addTrauma(0.05);burst(tx,ty,6,b.crit?PAL.perfect:PAL.ok,160,{g:200,size:0.8});}
     const kick2=b.landed?Math.max(0,1-(now-b.landAt)/140):0;   // 칸마다 작은 반동
-    let x=sx+(tx-sx)*e,y=sy+(ty-sy)*e-Math.sin(k*Math.PI)*60+kick2*-6,a=1;
-    if(b.x&&now>=AMMO.xAt){const u=clamp((now-AMMO.xAt)/300,0,1);a=1-0.75*u;y+=u*10;
-      if(!b.xFx){b.xFx=1;SFX.miss();}}
-    if(!b.landed){ctx.globalCompositeOperation='lighter';ctx.globalAlpha=0.5;ctx.strokeStyle=b.crit?'#ffd34a':'#cfe6ff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x,y);const e2=ease(Math.max(0,k-0.12));ctx.lineTo(sx+(tx-sx)*e2,sy+(ty-sy)*e2-Math.sin(Math.max(0,k-0.12)*Math.PI)*60);ctx.stroke();ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;}
-    drawBullet(x,y,b,a,now);
-    if(b.x&&now>=AMMO.xAt){const u=clamp((now-AMMO.xAt)/160,0,1),s=T.BULLET_W*0.55*u;ctx.strokeStyle='#ff5d5d';ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x-s,y-s);ctx.lineTo(x+s,y+s);ctx.moveTo(x+s,y-s);ctx.lineTo(x-s,y+s);ctx.stroke();}});
-  if(!AMMO.def&&now>=AMMO.totAt){const u=clamp((now-AMMO.totAt)/220,0,1),c=AMMO.items.some(b=>b.crit&&!b.x),n=AMMO.items.length,w=T.BULLET_W+T.BULLET_GAP,[x0,y]=ammoSlot(0);
-    if(!AMMO.totDone){AMMO.totDone=true;SFX.dmg(c);addTrauma(TUNE.TRAUMA_DMG*(c?1:0.6));kick(c?0.08:0.04);bloom=Math.max(bloom,c?0.5:0.15);}
-    const tx=n?x0+n*w+62-w/2:cx,sc=1+0.6*(1-u)*(1-u);ctx.save();ctx.translate(tx,y);ctx.scale(sc,sc);ctx.globalAlpha=u;ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='900 46px system-ui,sans-serif';
-    ctx.shadowColor=c?'#ffb020':'#000';ctx.shadowBlur=c?18:8;ctx.fillStyle=c?'#ffd34a':'#f2f4f8';ctx.fillText(AMMO.sum>0?'−'+AMMO.sum:'0',0,2);ctx.restore();ctx.globalAlpha=1;}}
+    const x=sx+(tx-sx)*e,y=sy+(ty-sy)*e-Math.sin(k*Math.PI)*60+kick2*-6,sc=(0.55+0.45*e)*(1+0.18*kick2);
+    if(!b.landed){ctx.globalCompositeOperation='lighter';ctx.globalAlpha=0.5;ctx.strokeStyle=b.chain?'#ff5d6c':b.crit?'#ffd34a':'#cfe6ff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x,y);const e2=ease(Math.max(0,k-0.12));ctx.lineTo(sx+(tx-sx)*e2,sy+(ty-sy)*e2-Math.sin(Math.max(0,k-0.12)*Math.PI)*60);ctx.stroke();ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;}
+    drawToken(x,y,b,sc,now);});
+  if(now>=AMMO.totAt&&!AMMO.totDone){AMMO.totDone=true;const c=AMMO.items.some(b=>b.crit);   // 다 놓인 순간 타격감 (숫자 없음)
+    SFX.dmg(c);addTrauma(TUNE.TRAUMA_DMG*(c?1:0.6));kick(c?0.08:0.04);bloom=Math.max(bloom,c?0.5:0.15);}}
 function drawAgain(now){if(phase!=='done')return;const a=clamp((now-endT-TUNE50.AGAIN_MS)/900,0,1)*0.4;if(a<=0)return;   // v4.9: 글자 대신 은은한 ↻
   const x=W-30,y=H-(USE3D?34:30),r=10;ctx.save();ctx.globalAlpha=a;ctx.strokeStyle='#cfd6e4';ctx.lineWidth=2;ctx.lineCap='round';ctx.beginPath();ctx.arc(x,y,r,-Math.PI*0.35,Math.PI*1.45);ctx.stroke();
   const ex=x+r*Math.cos(-Math.PI*0.35),ey=y+r*Math.sin(-Math.PI*0.35);ctx.beginPath();ctx.moveTo(ex+5,ey-1);ctx.lineTo(ex,ey);ctx.lineTo(ex+1,ey+5);ctx.stroke();ctx.restore();}
@@ -1338,7 +1385,7 @@ function drawLabels(now){ctx.textAlign='center';
   for(let i=labels.length-1;i>=0;i--){const L=labels[i],k=(now-L.t0)/750;if(k>=1){labels.splice(i,1);continue;}
     const y=L.y-22*(1-Math.pow(1-k,2));ctx.globalAlpha=k<0.7?1:(1-k)/0.3;
     ctx.font='900 19px system-ui,sans-serif';ctx.fillStyle=L.col;ctx.shadowColor=L.col;ctx.shadowBlur=10;ctx.fillText(L.txt,L.x,y);ctx.shadowBlur=0;
-    if(L.sub){ctx.font='600 11px system-ui,sans-serif';ctx.fillStyle='rgba(220,226,236,.85)';ctx.fillText(L.sub,L.x,y+15);}}
+    if(L.sub&&DEBUG){ctx.font='600 11px system-ui,sans-serif';ctx.fillStyle='rgba(220,226,236,.85)';ctx.fillText(L.sub,L.x,y+15);}}   // v4.10: 원 타이밍(ms) 숫자는 ?debug일 때만
   ctx.globalAlpha=1;}
 function upMark(x,y,now,b,v){const bob=Math.sin(now/220)*2.5;y+=bob;
   ctx.globalCompositeOperation='lighter';const g=ctx.createRadialGradient(x,y,0,x,y,26);g.addColorStop(0,'rgba(92,242,166,.5)');g.addColorStop(1,'rgba(92,242,166,0)');ctx.fillStyle=g;ctx.fillRect(x-26,y-26,52,52);
