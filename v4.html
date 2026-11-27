@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#07080c">
-<title>LB v4.5 · 공중 방향 입력 + 착지 원 + 빨간 연쇄 + 몸체 강화 효과 + 던전 바닥 + 실패 즉시 깨짐</title>
+<title>LB v4.6 · 공중 방향 입력 + 착지 원 + 빨간 연쇄 + 몸체 강화 효과 + 던전 바닥 + 실패 즉시 깨짐 + 아이콘 변신 + 공격/방어</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#07080c;color:#fff;overscroll-behavior:none;touch-action:none;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
@@ -32,6 +32,13 @@ html,body{margin:0;height:100%;overflow:hidden;background:#07080c;color:#fff;ove
 #ui button,#mute,#gear,#panel button{font:600 11px/1 system-ui,sans-serif;color:#aab1c0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
   border-radius:8px;padding:7px 9px;touch-action:manipulation}
 #ui button.on,#panel button.on{color:#07080c;background:#cfd6e4;border-color:#cfd6e4}
+#side{position:fixed;top:calc(env(safe-area-inset-top) + 40px);right:calc(env(safe-area-inset-right) + 10px);display:flex;gap:4px;z-index:5}   /* v4.6 공격/방어 토글 */
+#side button{font:600 10px/1 system-ui,sans-serif;color:#aab1c0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px 8px;touch-action:manipulation}
+#side button.on[data-s=atk]{color:#07080c;background:#ffb27a;border-color:#ffb27a}#side button.on[data-s=def]{color:#07080c;background:#a9c8ec;border-color:#a9c8ec}
+#foe{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 74px);text-align:center;font-size:12px;line-height:1.45;color:#c9d6e8;pointer-events:none;z-index:3;text-shadow:0 1px 6px #000}
+#foe b{color:#ff8a6e}#foe i{font-style:normal;color:#ffd34a;font-weight:800}
+#dmg small{display:block;font-size:15px;font-weight:700;margin-top:8px;color:#cfd6e4;text-shadow:0 1px 8px #000;letter-spacing:0}
+#dmg.shield{color:#cfe2ff;text-shadow:0 0 20px #5a8fd6}
 #mute{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:calc(env(safe-area-inset-left) + 10px);z-index:5;font-size:14px;padding:5px 8px}
 #gear{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:calc(env(safe-area-inset-left) + 52px);z-index:5}
 #panel{position:fixed;top:calc(env(safe-area-inset-top) + 44px);left:calc(env(safe-area-inset-left) + 10px);z-index:6;width:min(290px,calc(100vw - 20px));
@@ -80,6 +87,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#07080c;color:#fff;ove
   <div class="row"><div class="lab"><span>실패 주사위 깨짐</span></div>
     <div class="seg" data-o="shatter"><button data-v="1" class="on">켬</button><button data-v="0">크랙만</button></div></div>
 </div>
+<div id="side"><button data-s="atk" class="on">공격</button><button data-s="def">방어</button></div>
+<div id="foe"></div>
 <div id="ui"><button data-d="easy">쉬움</button><button data-d="normal" class="on">보통</button><button data-d="hard">어려움</button></div>
 <div id="pad"><button data-k="L">←</button><button data-k="U">↑</button><button data-k="D">↓</button><button data-k="R">→</button></div>
 <div id="sum"></div>
@@ -141,6 +150,31 @@ const TUNE46={
   HOLD_MS:90,           // 다 퍼진 뒤 깨지기 전 멈춤 (v4.4 = 320)
   DIM_RATE:22,          // 금 시작 때 색이 빠지는 빠르기 (v4.4 결과 공개 때 = 8)
 };
+// ================= v4.6 조절값: 성공 눈 → 아이콘 "뿅" 변신 =================
+const TUNE47={
+  POP_DELAY_MS:60,      // 최종 눈 확정 → 뿅 시작 (실패 금과 같은 박자)
+  STAGGER_MS:60,        // 여러 주사위가 동시에 확정될 때 뿅 사이 시차 (요청 40~80)
+  SHRINK_MS:70,         // 눈금이 오그라드는 시간
+  GROW_MS:240,          // 아이콘이 튀어나와 정착하는 시간
+  OVER:0.5,OVER_BIG:0.9,// 튀어나올 때 넘치는 정도 (일반 / 치명·연쇄·금테 방패)
+  SQUASH:0.22,          // 스쿼시·스트레치 세기 (가로·세로 엇갈림)
+  SPARK_N:14,SPARK_BIG:30,  // 반짝 파티클 수
+  CHAIN_AFTER_MS:260,   // 6: "연쇄!" + 연쇄 아이콘 뒤 빨간 주사위가 튀어나오기까지
+};
+window.__v46={pops:[]};
+// ================= v4.6 조절값: 던지는 대형 = 손에서 쏟아지는 느슨한 줄 (2×2 뭉치 대신) =================
+const TUNE48={
+  LINE:1,               // 1 = 줄 대형, 0 = v4.5 격자
+  THROW_STAGGER_MS:55,  // 하나씩 손을 떠나는 시차 (요청 40~70)
+  HOLD_STEP_U:0.04,     // 공중에 머무는 궤적 지점의 주사위 간 차이 → 줄 길이·착지 따다닥 간격(약 45ms)
+  AIR_GAP:1.4,          // 출발 위치를 던진 방향 뒤로 하나씩 물림 (공중 줄 간격)
+  AIR_X:[0.35,0.18],    // 공중 좌우 엇갈림·흔들림
+  LINE_GAP_Z:1.2,       // 멈춘 줄: 앞뒤 간격
+  LINE_X:0.62,          // 멈춘 줄: 좌우 엇갈림(지그재그)
+  LINE_SKEW:0.12,       // 줄이 살짝 사선으로 기우는 정도
+  CHAIN_DX:1.6,         // 빨간 주사위 자리: 부모 바깥쪽 옆
+  ROLL_JIT_MS:70,       // 구르는 시간 흔들림 (v4.5 = 260, 크면 착지 순서가 뒤바뀜)
+};
 let FR=[],FRP=[],frSnd=0;window.__v44={brk:[],frags:0};
 let P3=[],SH3=[],MOTES=[],PTA=null;
 let USE3D=false,gl=null,glc=null,G3=null,tray=0,trayT=0,gtime=0,dice3=[],seq3=null,VP=null,camE=[0,12,6],camC=[0,0,0];
@@ -172,6 +206,7 @@ const DIE_VS=`attribute vec3 aP;attribute vec3 aN;uniform mat4 uVP,uM;varying ve
 void main(){vOP=aP;vON=aN;vec4 w=uM*vec4(aP,1.0);vWP=w.xyz;gl_Position=uVP*w;}`;
 const DIE_FS=`precision highp float;varying vec3 vOP,vON,vWP;uniform mat4 uM;uniform vec3 uCam;uniform float uGold,uDim,uHi,uTime,uRed,uUp,uFl,uTD;uniform vec3 uTorch;
 uniform float uCrk,uNs,uCW;uniform vec3 uCO;uniform vec3 uSd[16];uniform vec2 uDF;   // v4.4 크랙: 진행도, 조각 씨앗(조각 경계 = 금 선), 시작점
+uniform float uIcon,uIconV,uPipS;uniform vec2 uIS;   // v4.6 아이콘: 종류(1 칼·2 금 칼·3 연쇄·4 방패·5 금테 방패), 바뀌는 면의 눈, 눈금 크기, 아이콘 크기(가로·세로 = 스쿼시·스트레치)
 const float PI=3.14159265;
 const vec3 IVORY=vec3(0.80,0.71,0.53);   // 상아색 레진 (선형)
 const vec3 GOLD=vec3(1.0,0.72,0.30);     // 금 F0
@@ -190,13 +225,28 @@ vec2 cand(int i){if(i==0)return vec2(0.0);if(i==1)return vec2(-1.0,-1.0);if(i==2
 vec3 shade(vec3 N,vec3 V,vec3 L,vec3 lc,vec3 alb,vec3 F0,float a,float wrap){vec3 H=normalize(L+V);float nl=max(dot(N,L),0.0),nh=max(dot(N,H),0.0),lh=max(dot(L,H),0.0);
  vec3 F=F0+(1.0-F0)*pow(1.0-lh,5.0);float dif=max((dot(N,L)+wrap)/(1.0+wrap),0.0);
  return lc*(alb*dif*(1.0-F)+dggx(nh,a)*F*nl/(4.0*max(lh*lh,0.12)));}
+// v4.6 아이콘 모양 (면 좌표, 아이콘 반폭 = 1). 값 < 0 이 안쪽
+float sdBox(vec2 p,vec2 b){vec2 d=abs(p)-b;return length(max(d,0.0))+min(max(d.x,d.y),0.0);}
+float sdSeg(vec2 p,vec2 a,vec2 b){vec2 pa=p-a,ba=b-a;float h=clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0);return length(pa-ba*h);}
+vec2 r45(vec2 p){return vec2(0.7071*(p.x+p.y),0.7071*(p.y-p.x));}
+float sdSword(vec2 p){p=r45(p);float bw=0.15*clamp((0.98-p.y)/0.30,0.0,1.0);
+ float blade=max(abs(p.x)-bw,max(p.y-0.98,-0.28-p.y));
+ float guard=sdBox(p-vec2(0.0,-0.34),vec2(0.40,0.06))-0.025,grip=sdBox(p-vec2(0.0,-0.62),vec2(0.065,0.22)),pom=length(p-vec2(0.0,-0.9))-0.11;
+ return min(min(blade,guard),min(grip,pom));}
+float sdStar(vec2 p){float r=length(p),a=atan(p.y,p.x);return abs(r-(0.84+0.13*cos(8.0*a)))-0.04;}   // 치명: 칼 뒤 별 테두리
+float sdLink(vec2 p,vec2 c){p=r45(p-c);return abs(sdSeg(p,vec2(-0.2,0.0),vec2(0.2,0.0))-0.25)-0.085;}
+float sdChain(vec2 p){return min(sdLink(p,vec2(-0.29,-0.29)),sdLink(p,vec2(0.29,0.29)));}   // 연쇄: 사슬 고리 두 개
+float sdShield(vec2 p){float k=clamp((0.2-p.y)/1.12,0.0,1.0),w=0.74*pow(max(0.0,1.0-k*k),0.62);
+ return max(abs(p.x)-w,max(p.y-0.82+0.14*p.x*p.x,-0.92-p.y));}
 void main(){vec3 p=vOP,a=abs(p),n=normalize(vON);float val;vec2 uv;vec3 tu,tv;
  if(a.y>=a.x&&a.y>=a.z){val=p.y>0.0?1.0:6.0;uv=p.xz;tu=vec3(1,0,0);tv=vec3(0,0,1);}
  else if(a.x>=a.z){val=p.x>0.0?2.0:5.0;uv=p.zy;tu=vec3(0,0,1);tv=vec3(0,1,0);}
  else{val=p.z>0.0?3.0:4.0;uv=p.xy;tu=vec3(1,0,0);tv=vec3(0,1,0);}
  float best=9.0;vec2 bw=vec2(0.0);float inn=step(1.5,length(vON));   // v4.4: 조각 안쪽 단면 (노멀 길이 2로 표시)
+ float isI=(uIcon>0.5&&abs(val-uIconV)<0.5)?1.0:0.0;   // v4.6: 이 면이 아이콘으로 바뀌는 윗면인가
  for(int i=0;i<7;i++){if(act(val,i)){vec2 w=uv-cand(i)*0.25;float d=length(w);if(d<best){best=d;bw=w;}}}
- const float RP=0.088;float pip=(1.0-smoothstep(RP-0.007,RP+0.002,best))*(1.0-inn);float rim=smoothstep(RP+0.035,RP,best)*(1.0-pip)*(1.0-inn);
+ const float RP0=0.088;float RP=max(RP0*mix(1.0,uPipS,isI),0.0005),pv=step(0.004,RP);
+ float pip=(1.0-smoothstep(RP-0.007,RP+0.002,best))*(1.0-inn)*pv;float rim=smoothstep(RP+0.035,RP,best)*(1.0-pip)*(1.0-inn)*pv;
  float crk=0.0,lip=0.0;
  if(uCrk>0.0){vec3 q=p+0.016*vec3(sin(p.y*41.0+p.z*23.0),sin(p.z*37.0+p.x*29.0),sin(p.x*33.0+p.y*27.0));
   float bd=9.0;vec3 sa=vec3(0.0);
@@ -234,6 +284,20 @@ void main(){vec3 p=vOP,a=abs(p),n=normalize(vON);float val;vec2 uv;vec3 tu,tv;
  col+=mix(vec3(0.35,0.62,1.0)*pow(1.0-nv,3.0)*1.3,vec3(1.0,0.95,0.93)*pow(1.0-nv,5.0)*0.75,uRed)*uHi; // 성공: 테두리 빛 (빨간 주사위는 가는 흰 빛)
  vec3 ua=abs(vOP);float med=max(min(ua.x,ua.y),min(max(ua.x,ua.y),ua.z)),bord=smoothstep(0.34,0.49,med);   // 면 테두리(모서리 쪽)
  col+=vec3(0.20,1.0,0.72)*uUp*(1.0-pip)*(1.4*pow(1.0-nv,2.2)+1.6*bord+2.0*smoothstep(0.03,0.2,edge)+0.08); // v4.3 강화: 모서리·면 테두리를 따라 차오르는 초록·청록 빛 (눈은 가리지 않음)
+ if(isI>0.5&&uIS.x>0.002&&inn<0.5){vec2 q=vec2(vWP.x-uM[3].x,uM[3].z-vWP.z)/(0.35*uIS);float aa=0.035/uIS.x,ty=uIcon,d;   // v4.6 윗면 아이콘: 화면 기준 방향(월드 x·−z)으로 그려 주사위가 어느 쪽으로 돌아 멈춰도 바로 서 보임
+  if(ty<2.5)d=sdSword(q);else if(ty<3.5)d=sdChain(q);else d=sdShield(q);
+  float m=1.0-smoothstep(-aa,aa,d),ol=(1.0-smoothstep(-aa,aa,d-0.11))*(1.0-m);
+  float lt=0.55+0.65*max(N.y,0.0),pul=0.85+0.15*sin(uTime*7.0);vec3 ic;
+  if(ty<1.5){ic=mix(vec3(0.014,0.014,0.018),vec3(0.95,0.93,0.90),uRed)*lt;col=mix(col,mix(vec3(0.25,0.55,1.0),vec3(1.0,0.9,0.88),uRed)*0.9,ol*0.8);}   // 칼: 눈 도료 색 + 파란 테
+  else if(ty<2.5){ic=mix(vec3(3.2,1.8,0.45),vec3(1.9,0.95,0.12),uRed)*pul;float st=1.0-smoothstep(-aa,aa,sdStar(q));
+   col=mix(col,col*0.2,ol);col+=vec3(2.4,1.35,0.3)*st*(1.0-m)*pul;}                                                    // 금 칼 + 별 테두리
+  else if(ty<3.5){ic=vec3(3.0,2.3,1.6)*pul;col=mix(col,vec3(1.7,0.08,0.05),ol);}                                       // 연쇄: 달군 사슬 + 붉은 테
+  else{float bev=1.0-smoothstep(-0.2,-0.12,d),ins=1.0-smoothstep(0.02,0.045,abs(d+0.2)),rid=(1.0-smoothstep(0.035,0.06,abs(q.x)))*bev;
+   vec3 Rr=reflect(-V,N);float sp=pow(max(dot(Rr,normalize(KEY)),0.0),10.0);
+   ic=vec3(0.34,0.42,0.52)*lt*(0.75+0.35*bev)*(1.0-0.55*ins)+vec3(0.55,0.62,0.7)*rid*0.5+vec3(0.6,0.75,1.0)*sp*0.9;
+   if(ty>4.5){ic=mix(ic,vec3(3.0,1.8,0.5)*pul,1.0-bev);col=mix(col,col*0.25,ol);}                                    // 금테 방패(6)
+   else col=mix(col,vec3(0.3,0.55,1.0)*1.1,ol*0.85);}                                                                  // 방패: 차가운 강철 + 푸른 테
+  col=mix(col,ic,m);}
  float l=dot(col,vec3(0.3,0.59,0.11));col=mix(col,mix(vec3(l),vec3(l)*RUST,uRed),uDim*0.85)*mix(1.0,mix(uDF.x,uDF.y,uRed),uDim); // 실패: 회색(상아) / 어두운 적갈색(빨강)
  col=mix(col*(1.0+2.2*lip),vec3(0.004,0.0035,0.003),crk);   // v4.4 금: 검은 틈 + 틈 가장자리 밝은 깨진 결
  col=(col*(2.51*col+0.03))/(col*(2.43*col+0.59)+0.14);gl_FragColor=vec4(pow(clamp(col,0.0,1.0),vec3(0.4545)),1.0);}`;
@@ -402,22 +466,36 @@ function resize3D(){if(!USE3D)return;const d=Math.min(TUNE3.DPR_MAX,window.devic
 function layoutSlots(n){const cols=n<=3?n:n===4?2:n<=6?3:4,rows=Math.ceil(n/cols),g=TUNE3.SLOT_GAP,out=[];
   for(let i=0;i<n;i++){const r=Math.floor(i/cols),inRow=Math.min(cols,n-r*cols),c=i-r*cols;
     out.push([(c-(inRow-1)/2)*g+rnd(-0.12,0.12),(r-(rows-1)/2)*g+rnd(-0.1,0.1)]);}return{out,cols,rows};}
+// v4.6: 줄 대형 — 0번(먼저 나간 주사위)이 가장 멀리(화면 위), 좌우로 엇갈리는 느슨한 사선 줄
+function lineSlots(n){const T=TUNE48,out=[];let side=Math.random()<0.5?1:-1;
+  for(let i=0;i<n;i++){const c=i-(n-1)/2;out.push([(n>1?side*T.LINE_X:0)+c*T.LINE_SKEW+rnd(-0.1,0.1),c*T.LINE_GAP_Z+rnd(-0.08,0.08)]);side=-side;}
+  return frameOf({out,line:true});}
+function frameOf(L){const g=TUNE3.SLOT_GAP,xs=L.out.map(s=>s[0]),zs=L.out.map(s=>s[1]);
+  L.cols=(Math.max(...xs)-Math.min(...xs))/g+1;L.rows=(Math.max(...zs)-Math.min(...zs))/g+1;return L;}
 // v4: 던질 때 기본 눈으로 띄우고(launch3D), 2단계가 끝나면 최종 눈으로 다시 겨눈다(release3D).
 //     다시 겨눌 때 현재 위치·자세를 그대로 두고, 차이(qOff)를 첫 굴림 전까지 서서히 0으로 줄인다 → 튐 없음, 마지막 자세는 정확히 최종 눈.
 function aimDie(d,slot){const dir=vnorm([slot[0]-d.x0,0,slot[1]-d.z0]),psi0=Math.atan2(dir[0],dir[2]);
   d.slot=slot;d.A=[Math.cos(psi0),0,-Math.sin(psi0)];d.qFinal0=qMul(qAxis([0,1,0],psi0),FACE_Q[d.v]);}
 function mkDie3(d,slot,i,base,chainK){let x0,z0;const chain=chainK>=0;
-  if(chain){const s=(chainK%2)?1:-1;x0=s*rnd(5.0,6.0);z0=slot[1]+rnd(-0.6,0.6);}else{x0=slot[0]*1.15+rnd(-0.25,0.25);z0=rnd(7.0,8.2)+slot[1]*0.5;}
+  if(chain){const s=(chainK%2)?1:-1;x0=s*rnd(5.0,6.0);z0=slot[1]+rnd(-0.6,0.6);}
+  else if(TUNE48.LINE){const A=TUNE48.AIR_X;x0=slot[0]*A[0]/TUNE48.LINE_X+rnd(-A[1],A[1]);z0=7.2+i*TUNE48.AIR_GAP+rnd(-0.1,0.1);}   // v4.6: 같은 손에서 하나씩, 뒤로 물려 출발
+  else{x0=slot[0]*1.15+rnd(-0.25,0.25);z0=rnd(7.0,8.2)+slot[1]*0.5;}
+  const ln=!chain&&TUNE48.LINE;
   const o={...d,idx:i,x0,z0,y0:rnd(TUNE3.DROP_H[0],TUNE3.DROP_H[1]),ax2:vnorm([rnd(-1,1),rnd(-0.3,0.3),rnd(-1,1)]),yawJit:rnd(-0.55,0.55),
     nTip:1+(Math.random()<0.4?1:0),spin:rnd(TUNE3.SPIN[0],TUNE3.SPIN[1]),phi0:rnd(2,5),
-    t0:base+(chain?chainK*TUNE3.STAGGER_MS+TUNE3.CHAIN_DELAY_MS:i*TUNE3.STAGGER_MS),T:TUNE3.ROLL_MS+rnd(0,TUNE3.ROLL_JITTER_MS),age:0,
+    t0:base+(chain?chainK*TUNE3.STAGGER_MS+TUNE3.CHAIN_DELAY_MS:i*(ln?TUNE48.THROW_STAGGER_MS:TUNE3.STAGGER_MS)),T:TUNE3.ROLL_MS+rnd(0,ln?TUNE48.ROLL_JIT_MS:TUNE3.ROLL_JITTER_MS),age:0,
     lastHop:0,lastTip:-1,settled:false,gold:0,dim:0,hi:0,qOff:null,relU:0};
   aimDie(o,slot);o.pos=[x0,0.5,z0];o.q=o.qFinal0;return o;}
-function launch3D(base,held){trayT=1;const L=layoutSlots(base.length),t=gtime+60;
+function launch3D(base,held){trayT=1;const L=TUNE48.LINE?lineSlots(base.length):layoutSlots(base.length),t=gtime+60;
   dice3=base.map((v,i)=>mkDie3({v,base:v,ok:false,crit:false,chain:false,up:false},L.out[i],i,t,-1));
   seq3={res:null,isCrit:false,L,shownDmg:false,doneAt:0,held};
   word.style.transition='top .35s cubic-bezier(.2,.9,.3,1)';word.style.top=(H*0.085)+'px';sub.textContent='';}
-function release3D(res,isCrit){const n=res.dice.length,L=layoutSlots(n),na=dice3.length;
+function release3D(res,isCrit){const n=res.dice.length,na=dice3.length;let L;
+  const six=res.dice.map((d,j)=>j).filter(j=>!res.dice[j].chain&&res.dice[j].v===6);
+  if(TUNE48.LINE&&seq3.L&&seq3.L.line){const out=seq3.L.out.slice(0,na);   // v4.6: 던진 줄 자리는 그대로, 빨간 주사위는 부모 바깥쪽 옆
+    for(let i=na;i<n;i++){const ps=out[six[i-na]],sd=Math.sign(ps[0])||1;out.push([ps[0]+sd*TUNE48.CHAIN_DX+rnd(-0.08,0.08),ps[1]+rnd(-0.15,0.15)]);}
+    L=frameOf({out,line:true});}
+  else L=layoutSlots(n);
   seq3.L=L;seq3.res=res;seq3.isCrit=isCrit;seq3.held=false;
   for(let i=0;i<na;i++){const d=dice3[i],nd=res.dice[i],u=Math.min(1,d.age/d.T),old=pose(d,u),s=1-Math.pow(1-u,2.4),slot=L.out[i];
     if(s<0.999){d.x0=(old.p[0]-slot[0]*s)/(1-s);d.z0=(old.p[2]-slot[1]*s)/(1-s);}
@@ -425,17 +503,16 @@ function release3D(res,isCrit){const n=res.dice.length,L=layoutSlots(n),na=dice3
     Object.assign(d,{v:nd.base,vFin:nd.v,base:nd.base,up:nd.up,tried:nd.tried,ok:nd.ok,crit:nd.crit});d.qOff=null;aimDie(d,slot);
     const nw=pose(d,u);d.qOff=qMul(old.q,qInv(nw.q));d.relU=u;}
   // v4.1: 연쇄 주사위는 그 연쇄를 일으킨 6 주사위(부모)가 멈춘 뒤 그 옆에서 튀어나온다
-  const six=res.dice.map((d,j)=>j).filter(j=>!res.dice[j].chain&&res.dice[j].v===6);
   for(let i=na;i<n;i++){const c=mkDie3(res.dice[i],L.out[i],i,gtime,i-na);c.parent=six[i-na];c.t0=Infinity;c.pending=true;dice3.push(c);}}
 // 부모가 멈춘 순간: 부모 옆에서 위로 튀어나와 자기 칸으로 굴러간다 (자세는 v3와 같은 방식으로 판정 눈에 맞춰 역산)
-function spawnChain(c,p){const sl=c.slot,dx=sl[0]-p.pos[0],dz=sl[1]-p.pos[2],dl=Math.hypot(dx,dz)||1,o=TUNE41.POP_OFFSET;
-  c.x0=p.pos[0]+dx/dl*o;c.z0=p.pos[2]+dz/dl*o;c.y0=rnd(TUNE41.POP_H[0],TUNE41.POP_H[1]);c.age=0;
+function spawnChain(c,p,dl){const sl=c.slot,dx=sl[0]-p.pos[0],dz=sl[1]-p.pos[2],dl2=Math.hypot(dx,dz)||1,o=TUNE41.POP_OFFSET;
+  c.x0=p.pos[0]+dx/dl2*o;c.z0=p.pos[2]+dz/dl2*o;c.y0=rnd(TUNE41.POP_H[0],TUNE41.POP_H[1]);c.age=0;
   c.T=TUNE41.ROLL_MS+rnd(0,TUNE41.ROLL_JITTER_MS);c.qOff=null;aimDie(c,sl);c.pos=[c.x0,c.y0,c.z0];c.q=pose(c,0).q;
-  c.pending=false;c.t0=gtime+TUNE41.POP_DELAY_MS;c.popFx=true;c.from=[p.pos[0],p.pos[2]];}
+  c.pending=false;c.t0=gtime+(dl==null?TUNE41.POP_DELAY_MS:dl);c.popFx=true;c.from=[p.pos[0],p.pos[2]];}
 function chainFx(c){const s=proj([c.from[0],0.6,c.from[1]]),now=performance.now();
   burst(s[0],s[1],TUNE41.P_CHAIN,PAL.chain,620,{size:1.2,g:-80});wave(s[0],s[1],70,0.32,'255,60,70',5);wave(s[0],s[1],34,0.18,'255,240,240',2);
   bloom=Math.max(bloom,TUNE41.BLOOM);bloomCol='255,40,55';addTrauma(TUNE41.TRAUMA);kick(TUNE41.PUNCH);hitstopUntil=Math.max(hitstopUntil,now+TUNE41.HITSTOP_MS);
-  SFX.chain();label(s[0],s[1]-46,'연쇄!','','#ff4d5e');}
+  SFX.chain();}   // v4.6: "연쇄!" 글자는 6이 연쇄 아이콘으로 바뀔 때(popDie) 먼저 뜬다
 // ---------- v4.2 강화 연출: 기운 모임 → (①) 떠올라 회전 / (②) 제자리 한 칸 구름 → 새 눈으로 내려앉음 ----------
 function upTarget(d,m2){const vF=d.vFin;
   if(!m2)return qMul(qAxis([0,1,0],rnd(-Math.PI,Math.PI)),FACE_Q[vF]);   // ①: 위쪽 축 둘레 회전은 윗면을 바꾸지 않으므로 방향은 자유
@@ -467,8 +544,22 @@ function updUp(d){const m2=G.mode===2,Tm=m2?TUNE42.STEP_MS:TUNE42.UP_MS,c=m2?TUN
     label(s[0],s[1]-40,'유지','','rgba(190,214,226,.85)');}
   else{sparks(C,T.SPARK_N,UPC,[3,8.5],1);dust(C,T.DUST_LAND,[1.8,3.6]);
     SH3.push({c:C.slice(),t0:gtime,dur:T.SHELL_MS,r:T.SHELL_R,col:[0.25,1.0,0.7],a:1.0});SH3.push({c:C.slice(),t0:gtime,dur:T.SHELL_MS*0.6,r:[T.SHELL_R[0],T.SHELL_R[1]*0.6],col:[0.85,1.0,0.95],a:0.8});  // 구형 충격파 2겹
-    hitstopUntil=Math.max(hitstopUntil,now+TUNE42.HITSTOP_MS);addTrauma(TUNE42.TRAUMA);kick(TUNE42.PUNCH);bloom=Math.max(bloom,0.25);bloomCol='92,242,166';SFX.clack(0.7);SFX.up();}
-  for(const c2 of dice3)if(c2.pending&&c2.parent===d.idx)spawnChain(c2,d);}   // 강화로(또는 그대로) 6이면 여기서 빨간 연쇄 주사위가 이어짐
+    hitstopUntil=Math.max(hitstopUntil,now+TUNE42.HITSTOP_MS);addTrauma(TUNE42.TRAUMA);kick(TUNE42.PUNCH);bloom=Math.max(bloom,0.25);bloomCol='92,242,166';SFX.clack(0.7);SFX.up();}}
+// v4.6 눈 → 아이콘 "뿅": 최종 눈 확정 순간(+시차). 6(공격)은 "연쇄!" + 연쇄 아이콘 → CHAIN_AFTER_MS 뒤 빨간 주사위 던짐
+function popDie(d){d.popped=true;d.lit=true;const T=TUNE47,def=SIDE==='def',six=!def&&!d.chain&&d.v===6;
+  d.icon=def?(d.crit?5:4):(six?3:(d.crit?2:1));d.big=d.icon===2||d.icon===3||d.icon===5;
+  const C=[d.pos[0],d.pos[1]+0.55,d.pos[2]],s=proj(C);
+  const pal={1:[[0.6,0.8,1],[1,1,1],[0.4,0.6,1]],2:[[1,0.85,0.4],[1,0.7,0.2],[1,1,0.8]],3:[[1,0.3,0.25],[1,0.85,0.5],[1,1,1]],4:[[0.7,0.82,1],[0.9,0.95,1],[0.5,0.6,0.75]],5:[[1,0.85,0.4],[0.8,0.9,1],[1,1,0.8]]}[d.icon];
+  sparks(C,d.big?T.SPARK_BIG:T.SPARK_N,pal,d.big?[2.5,6]:[1.4,3.6],d.big?1:0.8);
+  if(d.icon>=4)SFX.ching(d.icon===5);else SFX.pop(d.big);
+  if(d.crit){burst(s[0],s[1],TUNE.P_DIE_CRIT,PAL.perfect,360,{size:1,g:-60});wave(s[0],s[1],50,0.35,'255,211,74',3);SFX.gold();addTrauma(0.08);bloom=Math.max(bloom,0.3);bloomCol='255,210,90';}
+  else{addTrauma(0.03);wave(s[0],s[1],34,0.22,def?'170,200,240':'127,212,255',2);}
+  if(six){label(s[0],s[1]-46,'연쇄!','','#ff4d5e');d.chainAt=gtime+T.CHAIN_AFTER_MS;}
+  window.__v46.pops.push({t:gtime,i:d.idx,v:d.v,icon:d.icon,chain:!!d.chain,fin:d.finAt});}
+function iconU(d){if(!d.popped)return[0,1,0,0];const T=TUNE47,t=gtime-d.popAt;
+  if(t<T.SHRINK_MS)return[d.icon,1-t/T.SHRINK_MS,0,0];   // 눈금 수축
+  const k=Math.min(1,(t-T.SHRINK_MS)/T.GROW_MS),o=d.big?T.OVER_BIG:T.OVER,s=k>=1?1:1+(o+1)*Math.pow(k-1,3)+o*Math.pow(k-1,2);   // 튀어나오듯 커졌다 정착
+  const q=Math.sin(k*Math.PI*2)*(1-k)*T.SQUASH*(d.big?1.3:1);return[d.icon,0,Math.max(0.001,s*(1+q)),Math.max(0.001,s*(1-q))];}
 // ---------- v4.3 3D 효과 입자 ----------
 const UPC=[[0.36,0.95,0.65],[0.18,0.82,0.54],[0.85,1.0,0.93]];
 const rdir=()=>{const z=rnd(-1,1),a=rnd(0,PI2),r=Math.sqrt(1-z*z);return[r*Math.cos(a),z,r*Math.sin(a)];};
@@ -566,7 +657,7 @@ function drawUpFx(x,y,r0,ch,now,col){if(ch<=0)return;const r=r0*(1.9-0.9*ch),a=0
   ctx.globalCompositeOperation='source-over';}
 function roll3D(res,isCrit){launch3D(res.dice.filter(d=>!d.chain).map(d=>d.v),false);release3D(res,isCrit);}
 // v4.4: 공중에 머무는 궤적 지점. 방향 입력 중에는 시간 막대와 함께 RUN_U 구간을 천천히 내려오고, 원 단계에서는 v4처럼 HOLD_U까지
-function holdCapU(d){const h=Math.max(0.02,TUNE4.HOLD_U-d.idx*TUNE4.HOLD_STEP_U),R=TUNE45.RUN_U;
+function holdCapU(d){const h=Math.max(0.02,TUNE4.HOLD_U-d.idx*(TUNE48.LINE?TUNE48.HOLD_STEP_U:TUNE4.HOLD_STEP_U)),R=TUNE45.RUN_U;
   if(G&&(phase==='run'||phase==='end')){const p=phase==='run'?clamp((performance.now()-G.t0)/G.T,0,1):1-G.remFrac;return Math.min(h,R[0]+(R[1]-R[0])*p);}
   return h;}
 function pose(d,u){const H3=TUNE3.HOPS,UG=H3[H3.length-1][1];
@@ -595,17 +686,17 @@ function upd3D(gdt,rdt){
       const ps=pose(d,u);d.pos=ps.p;d.q=ps.q;
       if(d._tip!==undefined&&d._tip>d.lastTip){if(d.lastTip>=0)SFX.clack(0.18);d.lastTip=d._tip;}
       if(u>=1){d.settled=true;d.setAt=gtime;d.q=pose(d,1).q;   // 궤적의 마지막 자세 그대로 (보정·스냅 없음)
-        const top=topFace(d.q);__v3.log.push({want:d.v,top,ok:top===d.v,chain:!!d.chain,stage:d.chain?'chain':'base'});if(top!==d.v)console.error('윗면 불일치',d.v,top);
-        if(!d.tried)for(const c of dice3)if(c.pending&&c.parent===d.idx)spawnChain(c,d);}   // 강화 대상이면 연쇄는 강화 연출 뒤(updUp)
+        const top=topFace(d.q);__v3.log.push({want:d.v,top,ok:top===d.v,chain:!!d.chain,stage:d.chain?'chain':'base'});if(top!==d.v)console.error('윗면 불일치',d.v,top);}   // v4.6: 연쇄는 6이 연쇄 아이콘으로 바뀐 뒤(popDie → chainAt)
       else allDone=false;}
     else if(d.tried&&!d.upDone){allDone=false;if(d.upT0!=null&&gtime>=d.upT0)updUp(d);}
-    else if(gtime-d.setAt>=TUNE3.HILITE_DELAY_MS&&!d.lit&&seq3.revealAt!=null&&gtime>=seq3.revealAt){d.lit=true;
-      if(d.crit){const s=proj([d.pos[0],0.5,d.pos[2]]);burst(s[0],s[1],TUNE.P_DIE_CRIT,PAL.perfect,360,{size:1,g:-60});wave(s[0],s[1],50,0.35,'255,211,74',3);SFX.gold();addTrauma(0.08);bloom=Math.max(bloom,0.3);}
-      else if(d.ok)SFX.clack(0.12);}
+    else if(gtime-d.setAt>=TUNE3.HILITE_DELAY_MS&&!d.lit&&!d.ok&&seq3.revealAt!=null&&gtime>=seq3.revealAt){d.lit=true;}   // v4.6: 성공 주사위는 popDie에서 밝아짐
     if(d.lit){const k=Math.min(1,gdt*8);d.gold+=((d.crit?1:0)-d.gold)*k;d.hi+=((d.ok&&!d.crit?1:0)-d.hi)*k;d.dim+=((d.ok?0:1)-d.dim)*k;}
     // v4.5: 최종 눈이 정해진 순간(강화 없음·연쇄 = 멈춤, 강화 대상 = 강화 연출 끝) 실패면 바로 금 → 깨짐. 강화 전 기본 눈으로는 깨지지 않음
     if(d.settled&&(!d.tried||d.upDone)){if(d.finAt==null)d.finAt=gtime;
-      if(!d.ok&&gtime-d.finAt>=TUNE46.FAIL_DELAY_MS){if(!d.lit)d.dim+=(1-d.dim)*Math.min(1,gdt*TUNE46.DIM_RATE);updCrack(d);}}
+      if(!d.ok&&gtime-d.finAt>=TUNE46.FAIL_DELAY_MS){if(!d.lit)d.dim+=(1-d.dim)*Math.min(1,gdt*TUNE46.DIM_RATE);updCrack(d);}
+      if(d.ok&&d.popAt==null){d.popAt=Math.max(d.finAt+TUNE47.POP_DELAY_MS,(seq3.lastPop||-1e9)+TUNE47.STAGGER_MS);seq3.lastPop=d.popAt;}   // v4.6: 동시에 확정되면 시차
+      if(d.ok&&!d.popped&&gtime>=d.popAt)popDie(d);
+      if(d.chainAt!=null&&!d.chainGo&&gtime>=d.chainAt){d.chainGo=true;for(const c of dice3)if(c.pending&&c.parent===d.idx)spawnChain(c,d,0);}}
     if(!d.lit)allDone=false;}
   // v4.2: 기본 눈 주사위(연쇄 제외)가 모두 멈추면 강화 순서를 정한다. 강화가 없으면 바로 결과 공개
   if(seq3.res&&!seq3.upPlan&&dice3.filter(d=>!d.chain).every(d=>d.settled)){seq3.upPlan=1;let k=0,end=gtime;
@@ -675,7 +766,9 @@ function render3D(now,rdt){if(!USE3D)return;
   for(const d of live){if(d.broken)continue;const fl=d.flashT!==undefined?Math.max(0,1-(gtime-d.flashT)/T4.FLASH_MS):0,up=Math.max(d.glow||0,fl*fl*1.6*T4.GLOW*(d.keep?T4.KEEP:1));
     const c=d.crk||0,tr=c>0&&c<1?T5.TREMOR*(1-c*0.5):0,ps=tr?[d.pos[0]+rnd(-tr,tr),d.pos[1],d.pos[2]+rnd(-tr,tr)]:d.pos;
     crkU(c*T5.CRACK_REACH,d.co,d.pat,T5.CRACK_W[0]+(T5.CRACK_W[1]-T5.CRACK_W[0])*c);
-    gl.uniformMatrix4fv(P.u.uM,false,m4qt(d.q,ps));gl.uniform1f(P.u.uGold,d.gold);gl.uniform1f(P.u.uDim,d.dim);gl.uniform1f(P.u.uHi,d.hi);gl.uniform1f(P.u.uRed,d.chain?1:0);gl.uniform1f(P.u.uUp,up);gl.drawElements(gl.TRIANGLES,G3.n,gl.UNSIGNED_SHORT,0);}
+    gl.uniformMatrix4fv(P.u.uM,false,m4qt(d.q,ps));gl.uniform1f(P.u.uGold,d.gold);gl.uniform1f(P.u.uDim,d.dim);gl.uniform1f(P.u.uHi,d.hi);gl.uniform1f(P.u.uRed,d.chain?1:0);gl.uniform1f(P.u.uUp,up);
+    const ic=iconU(d);gl.uniform1f(P.u.uIcon,ic[0]);gl.uniform1f(P.u.uIconV,d.v);gl.uniform1f(P.u.uPipS,ic[1]);gl.uniform2f(P.u.uIS,ic[2],ic[3]);gl.drawElements(gl.TRIANGLES,G3.n,gl.UNSIGNED_SHORT,0);}
+  gl.uniform1f(P.u.uIcon,0);gl.uniform1f(P.u.uPipS,1);gl.uniform2f(P.u.uIS,0,0);
   // v4.4 깨진 조각 (조각 메시는 원래 주사위 좌표 그대로 → 조각 중심을 빼서 그린다. 바깥면은 금이 다 간 상태로)
   if(FR.length){gl.uniform1f(P.u.uUp,0);gl.uniform1f(P.u.uGold,0);gl.uniform1f(P.u.uHi,0);let cur=null;
     for(const F of FR){if(F.pat!==cur){cur=F.pat;gl.bindBuffer(gl.ARRAY_BUFFER,cur.vb);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,cur.ib);
@@ -778,7 +871,7 @@ const TUNE42={
 };
 // 디버그(배포 기본값 null = 끔): __forceBase=[3,2,5,4] 기본 눈 강제, __forceUp=[6,0,1,0] 해당 주사위를 강화 대상으로 만들고
 //   ① 방식의 다시 굴린 값을 지정(6이면 높은 값 6, 1이면 "유지"), ② 방식은 0이 아니면 +1 대상. 0 = 강제 안 함
-window.__forceBase=null;window.__forceUp=null;
+window.__forceBase=null;window.__forceUp=null;window.__forceChain=null;window.__forceFoe=null;   // v4.6: __forceChain 빨간 주사위 눈, __forceFoe=[일반,치명] 방어 모드 적 공격 성공 수
 // 난이도: 1단계 화살표 수 n·제한 시간 T(ms) / 2단계 원 닫히는 시간 close·완벽 ±perf·성공 ±good·원 사이 간격 gap(ms)
 const DIFF={
   easy:  {n:4,T:4500,close:900,perf:70,good:140,gap:520},
@@ -788,6 +881,30 @@ const DIFF={
 // 숨은 판정 데이터: 오팔 · 굴절 광선 → 갈고리 짐승 (v1~v3와 같음)
 const ATK={atk:4,acc:5,pow:5,pen:1,cd:2}, TGT={agi:3,tou:3,hp:8,sv:6,inv:0,df:2};
 const OPT={P:50,mode:1,penalty:0,direct:0,stage2:1,shatter:1};
+// v4.6 방어 모드: 갈고리 짐승(갈고리: 타수 3·위력 4·관통 0, 명중 4, 치명 피해 1) → 오팔(민첩 4·견고함 2·체력 8·장갑 6+·보호막 4+·방어 수 2)
+// 근거: LBCombatGameMode.cpp 110·123·127행, characters/opal.md 144·146행, combat-resolution-v2.md 144~158행
+let SIDE='atk',FOE=null;
+const FOEU={atk:3,acc:4,pow:4,pen:0,cd:1}, ME={agi:4,tou:2,hp:8,sv:6,inv:4,df:2};
+function defPick(){const nA=Math.max(0,ME.df-FOEU.pen),nI=ME.inv?ME.df:0;   // 장갑(관통으로 줄어듦) / 보호막(주사위 전부) 중 유리한 쪽 (기대 성공 수)
+  const e=(n,t)=>n*(7-Math.max(2,t))/6;return(ME.inv&&e(nI,ME.inv)>e(nA,ME.sv))?{n:nI,t:ME.inv,k:'보호막'}:{n:nA,t:ME.sv,k:'장갑'};}
+function rollFoe(){const t=hitTarget(FOEU.acc,ME.agi);let r;
+  do{const v=Array.from({length:FOEU.atk},R6);v.filter(x=>x===6).forEach(()=>v.push(R6()));   // 자연 6마다 연쇄 1개
+    const ok=v.map(x=>x!==1&&(x===6||x>=t));r={v,t,nA:v.filter((x,i)=>ok[i]&&x!==6).length,cA:v.filter(x=>x===6).length};}
+  while(r.nA+r.cA===0&&!window.__forceFoe);   // 임시: 공격이 다 빗나간 판은 다시 (규칙상 방어 굴림 생략)
+  if(window.__forceFoe){r.nA=window.__forceFoe[0];r.cA=window.__forceFoe[1];}
+  return r;}
+function showFoe(){const el=document.getElementById('foe');if(SIDE!=='def'){el.innerHTML='';return;}
+  if(!FOE)FOE=rollFoe();const D=defPick();
+  el.innerHTML=`갈고리 짐승의 갈고리 → 오팔 · <b>공격 ${FOE.nA}</b>${FOE.cA?` · <i>치명 ${FOE.cA}</i>`:''}<br>방어 주사위 ${D.n}개 · ${D.k} ${D.t}+ · 6 = 치명 방패`;}
+function finalizeDef(m,base,fin){const D=defPick(),f=FOE||rollFoe(),dn=Math.max(1,FOEU.pow-ME.tou),dc=dn+FOEU.cd;
+  const out={dice:[],dmg:0,hpAfter:ME.hp,t:D.t,def:true,foe:f};
+  fin.forEach((v,i)=>{const ok=v!==1&&(v===6||v>=D.t||v>=m.critT);out.dice.push({v,base:base[i],up:v>base[i],ok,crit:ok&&v>=m.critT,chain:false});});   // 방어 6은 연쇄 없음
+  const nS=out.dice.filter(d=>d.ok&&!d.crit).length,cS=out.dice.filter(d=>d.crit).length,nA=f.nA,cA=f.cA;
+  let best=nA*dn+cA*dc,left=nA+cA;
+  for(let k=0;k<=Math.min(cS,cA);k++){const kn=Math.min(cS-k,nA);for(let s=0;s<=Math.min(nS,nA-kn);s++){const pr=Math.min(Math.floor((nS-s)/2),cA-k),dm=(nA-kn-s)*dn+(cA-k-pr)*dc;
+    if(dm<best||(dm===best&&(nA-kn-s)+(cA-k-pr)<left)){best=dm;left=(nA-kn-s)+(cA-k-pr);}}}
+  out.dmg=best;out.hpAfter=Math.max(0,ME.hp-best);out.blocked=nA+cA-left;out.total=nA+cA;return out;}
+const nDice=()=>SIDE==='def'?defPick().n:ATK.atk;
 
 // ================= 판정 (화면에는 숨김) =================
 function hitTarget(acc,agi){const d=acc-agi;if(d>=3)return 2;if(d>=1)return 3;if(d===0)return 4;if(d>=-2)return 5;return 6;}
@@ -804,7 +921,7 @@ function finalize(m,base,fin){
   const out={dice:[],dmg:0,hpAfter:p.hp,t};
   const mk=(v,ch,b)=>{const ok=v!==1&&(v===6||v>=t||v>=m.critT);return{v,base:b,up:v>b,ok,crit:ok&&v>=m.critT,chain:ch};};
   fin.forEach((v,i)=>out.dice.push(mk(v,false,base[i])));
-  fin.filter(v=>v===6).forEach(()=>{const v=R6();out.dice.push(mk(v,true,v));});
+  fin.filter(v=>v===6).forEach((_,j)=>{const v=(window.__forceChain&&window.__forceChain[j])||R6();out.dice.push(mk(v,true,v));});   // v4.6 디버그 __forceChain=[1,5] 빨간 주사위 눈 강제(배포 null)
   const hits=out.dice.filter(d=>d.ok),nA=hits.filter(d=>!d.crit).length,cA=hits.length-nA;
   const nd=Math.max(0,p.df-p.pen),def=[];if(hits.length)for(let i=0;i<nd;i++){const v=R6();def.push({ok:v!==1&&(v===6||v>=p.sv),crit:v===6});}
   const nS=def.filter(d=>d.ok&&!d.crit).length,cS=def.filter(d=>d.crit).length;
@@ -871,6 +988,8 @@ const SFX={
   dmg(c){tone('sine',c?150:200,45,0.35,0.6);noise(0.08,0.35,'lowpass',900);if(c)tone('sawtooth',80,40,0.3,0.12);},
   crack(v){v=v==null?1:v;noise(0.05,0.32*v,'bandpass',1500+Math.random()*700,0,5);noise(0.03,0.2*v,'highpass',4200,0.03);tone('square',190,70,0.05,0.05*v);},   // v4.4 돌 갈라지는 소리
   thud(){tone('sine',120,46,0.16,0.42);noise(0.09,0.3,'lowpass',380);},   // v4.5 실패 확정: 짧고 둔탁한 소리
+  pop(big){tone('sine',big?520:640,big?1560:1900,big?0.11:0.08,0.32);tone('triangle',big?1040:1280,big?2400:2900,0.06,0.1,0.02);if(big)tone('sine',1980,1980,0.18,0.06,0.05);},   // v4.6 뿅
+  ching(big){tone('triangle',2350,2300,0.32,0.13);tone('sine',3520,3480,0.4,0.07,0.004);tone('sine',1570,1560,0.26,0.07);noise(0.02,0.25,'highpass',6500);if(big)tone('triangle',1175,1175,0.5,0.1,0.03);},   // v4.6 방패: 챙
   shatter(){noise(0.2,0.42,'lowpass',1300);noise(0.07,0.3,'bandpass',2600,0,2);tone('sine',130,42,0.18,0.35);},             // v4.4 깨짐
 };
 
@@ -926,6 +1045,7 @@ function startRun(now){const D=DIFF[diff];
   word.style.transition='';word.style.top=(cy-100)+'px';
   phase='run';pad.classList.remove('off');setWord('','');sub.textContent='';
   setHint('착지 전에 방향키·WASD · 스와이프 · 아래 버튼 — 틀리면 처음부터');SFX.start();
+  if(SIDE==='def'){if(!FOE||FOE.used)FOE=rollFoe();FOE.used=true;showFoe();}   // v4.6: 이번 판에 막을 적 공격
   throwDice(now);}
 function dirInput(k,now){
   if(phase!=='run'||now<G.stunUntil)return;
@@ -956,7 +1076,7 @@ function critImpact(tier){const now=performance.now(),big=tier==='crit2';const [
 
 // ---------- 던지기: 탭한 순간. 기본 눈은 여기서 정한다 ----------
 function throwDice(now){
-  G.base=Array.from({length:ATK.atk},R6);for(let i=0;i<Math.min(window.__force6|0,G.base.length);i++)G.base[i]=6;if(window.__forceBase)window.__forceBase.forEach((v,i)=>{if(v&&i<G.base.length)G.base[i]=v;});
+  G.base=Array.from({length:nDice()},R6);for(let i=0;i<Math.min(window.__force6|0,G.base.length);i++)G.base[i]=6;if(window.__forceBase)window.__forceBase.forEach((v,i)=>{if(v&&i<G.base.length)G.base[i]=v;});
   G.s2on=!!OPT.stage2;G.P=OPT.P;G.mode=OPT.mode;G.direct=OPT.direct;G.throwAt=now;G.thrown=true;SFX.swish();
   if(USE3D){launch3D(G.base,true);sub.style.top=(H*0.085+50)+'px';}}   // 방향 입력·원이 끝날 때까지 공중에 머묾
 // ---------- 방향 입력이 끝나면(완성·시간 초과) 곧바로 주사위별 원 ----------
@@ -992,7 +1112,7 @@ function doRelease(now){G.released=true;
   const results=S2?S2.rings.map(r=>r.res):[];G.results=results;G.offs=S2?S2.rings.map(r=>r.off==null?null:Math.round(r.off)):[];
   const fin=G.s2on?applyS2(G.base,results,G.P,G.mode):G.base.slice();if(!fin.tried)fin.tried=fin.map(()=>false);
   const fu=window.__forceUp;if(fu)fu.forEach((r,i)=>{if(r&&i<fin.length){fin.tried[i]=true;fin[i]=G.mode===2?Math.min(6,G.base[i]+1):Math.max(G.base[i],r);}});
-  const res=finalize(G.mods,G.base,fin);res.dice.forEach((d,i)=>d.tried=!d.chain&&!!fin.tried[i]);G.tried=fin.tried.map(t=>t?1:0).join('');G.out=res;info.style.opacity=0;if(S2)SFX.slowOut();
+  const res=(SIDE==='def'?finalizeDef:finalize)(G.mods,G.base,fin);res.dice.forEach((d,i)=>d.tried=!d.chain&&!!fin.tried[i]);G.tried=fin.tried.map(t=>t?1:0).join('');G.out=res;info.style.opacity=0;if(S2)SFX.slowOut();
   const isCrit=G.tier!=='normal';phase='roll';
   if(USE3D)release3D(res,isCrit);else rollDice(res,isCrit);}
 function ringGeom(i){
@@ -1028,14 +1148,17 @@ function updDice(now,gdt,rdt){if(USE3D){upd3D(gdt,rdt);return;}if(!dieSeq)return
     if(now-d.lastSw>55){d.shown=1+((Math.random()*6)|0);d.lastSw=now;}}
   if(!dieSeq.shownDmg&&now>=dieSeq.doneAt){dieSeq.shownDmg=true;showDmg(dieSeq.res,dieSeq.isCrit);}}
 function showDmg(res,isCrit){const c=res.dice.some(d=>d.crit&&d.ok);
-  dmgEl.textContent=res.dmg>0?'−'+res.dmg:'0';dmgEl.className='txt '+(c?'crit':'norm');void dmgEl.offsetWidth;dmgEl.classList.add('popBig');dmgEl.style.opacity='';
+  if(res.def){dmgEl.innerHTML=(res.dmg>0?'−'+res.dmg:'막음')+`<small>막은 공격 ${res.blocked} / ${res.total} · 받은 피해 ${res.dmg} · 오팔 체력 ${ME.hp} → ${res.hpAfter}</small>`;
+    dmgEl.className='txt '+(res.dmg>0?'norm':'shield');}
+  else dmgEl.textContent=res.dmg>0?'−'+res.dmg:'0';
+  if(!res.def)dmgEl.className='txt '+(c?'crit':'norm');void dmgEl.offsetWidth;dmgEl.classList.add('popBig');dmgEl.style.opacity='';
   word.style.transition='transform .25s';
   if(USE3D)dmgEl.style.top=(H*0.15)+'px';else word.style.top=(cy-R*0.55)+'px';
   SFX.dmg(c);addTrauma(TUNE.TRAUMA_DMG*(c?1:0.6));kick(c?0.08:0.04);bloom=Math.max(bloom,c?0.5:0.15);
   const att=res.dice.filter(d=>!d.chain).map(d=>d.up?`<b>${d.base}→${d.v}▲</b>`:`${d.base}→${d.v}`).join(' · ');
   const ch=res.dice.filter(d=>d.chain).map(d=>d.v);
-  sumEl.innerHTML=(G.s2on?'기본 눈 → 최종 눈 ':'2단계 끔 · 눈 ')+att+(ch.length?` <i style="color:#ff4d5e;font-weight:800">+연쇄 ${ch.join(',')}</i>`:'');
-  window.__games.push({tier:G.tier,timeout:G.timeout,mistakes:G.mistakes,accMod:G.mods.accMod,s2:G.results.join(''),offs:G.offs,base:G.base.join(''),fin:res.dice.filter(d=>!d.chain).map(d=>d.v).join(''),chain:ch.join(''),dmg:res.dmg});
+  sumEl.innerHTML=(res.def?'방어 · ':'')+(G.s2on?'기본 눈 → 최종 눈 ':'2단계 끔 · 눈 ')+att+(ch.length?` <i style="color:#ff4d5e;font-weight:800">+연쇄 ${ch.join(',')}</i>`:'');
+  window.__games.push({side:SIDE,tier:G.tier,timeout:G.timeout,mistakes:G.mistakes,accMod:G.mods.accMod,s2:G.results.join(''),offs:G.offs,base:G.base.join(''),fin:res.dice.filter(d=>!d.chain).map(d=>d.v).join(''),chain:ch.join(''),dmg:res.dmg,blocked:res.blocked,total:res.total,hpAfter:res.hpAfter});
   setTimeout(endAll,250);}
 function endAll(){phase='done';endT=performance.now();setHint('탭해서 다시');}
 
@@ -1150,10 +1273,10 @@ function frame(now){const rdt=Math.min(50,now-lastT)/1000;
   requestAnimationFrame(frame);}
 
 // ================= 입력 (누른 순간 바로 판정) =================
-const blocked=t=>t&&t.closest&&t.closest('#ui,#mute,#gear,#panel,#pad');
+const blocked=t=>t&&t.closest&&t.closest('#ui,#side,#mute,#gear,#panel,#pad');
 let sw=null;
 function restartOk(now){return phase==='done'&&now-endT>=TUNE.RESTART_GUARD_MS;}
-function resetIdle(){reset3D();S2=null;dice=[];dieSeq=null;labels.length=0;word.style.transition='';word.style.top=(cy-100)+'px';
+function resetIdle(){reset3D();S2=null;dice=[];dieSeq=null;labels.length=0;word.style.transition='';word.style.top=(cy-100)+'px';if(FOE&&FOE.used)FOE=null;showFoe();
   setWord('','');sub.textContent='';dmgEl.style.opacity=0;sumEl.innerHTML='';info.style.opacity=0;}
 addEventListener('pointerdown',e=>{if(blocked(e.target))return;e.preventDefault();unlockAudio();const now=performance.now();
   if((phase==='idle'||phase==='done')&&!panel.hidden){panel.hidden=true;return;}
@@ -1171,7 +1294,7 @@ addEventListener('keydown',e=>{if(e.repeat)return;const k=KEYS[e.code]||KEYS[e.k
   if(phase==='run'){if(k)dirInput(k,now);return;}
   if(phase==='air'){tapS2(now,null,null);return;}
   if(restartOk(now)){resetIdle();startRun(now);}});
-['touchstart','touchmove','gesturestart','dblclick'].forEach(t=>addEventListener(t,e=>{if(!e.target.closest('#ui,#mute,#panel,#gear,#pad'))e.preventDefault();},{passive:false}));
+['touchstart','touchmove','gesturestart','dblclick'].forEach(t=>addEventListener(t,e=>{if(!e.target.closest('#ui,#side,#mute,#panel,#gear,#pad'))e.preventDefault();},{passive:false}));
 pad.addEventListener('pointerdown',e=>{const b=e.target.closest('[data-k]');if(!b)return;e.preventDefault();unlockAudio();const now=performance.now();
   b.classList.remove('hit');void b.offsetWidth;b.classList.add('hit');
   if(phase==='idle'){startRun(now);return;}
@@ -1181,6 +1304,10 @@ $('#ui').addEventListener('pointerdown',e=>{const b=e.target.closest('[data-d]')
   diff=b.dataset.d;document.querySelectorAll('#ui button').forEach(x=>x.classList.toggle('on',x===b));
   if(phase==='done'){resetIdle();phase='idle';G=null;tension=0;cam.zoomT=1;pad.classList.remove('off');setWord('탭 또는 아무 방향키로 시작','small');setHint('');}});
 $('#mute').addEventListener('pointerdown',()=>{unlockAudio();muted=!muted;$('#mute').textContent=muted?'🔇':'🔊';});
+$('#side').addEventListener('pointerdown',e=>{const b=e.target.closest('[data-s]');if(!b||!(phase==='idle'||phase==='done'))return;   // v4.6 공격/방어
+  SIDE=b.dataset.s;document.querySelectorAll('#side button').forEach(x=>x.classList.toggle('on',x===b));FOE=null;
+  if(phase==='done'){resetIdle();phase='idle';G=null;tension=0;cam.zoomT=1;pad.classList.remove('off');setWord('탭 또는 아무 방향키로 시작','small');setHint('');}
+  showFoe();});
 $('#gear').addEventListener('pointerdown',()=>{panel.hidden=!panel.hidden;});
 function updNote(){$('#pv').textContent=OPT.P+'%';$('#pnote').textContent=`성공 = ${OPT.P/2}% · 전원 완벽 = ${Math.min(100,OPT.P+TUNE4.ALL_PERFECT_BONUS)}%`;}
 $('#pP').addEventListener('input',e=>{OPT.P=+e.target.value;updNote();});
