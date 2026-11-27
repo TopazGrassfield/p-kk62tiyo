@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#07080c">
-<title>LB v4.1 · 방향 입력 던지기 + 착지 원 + 빨간 연쇄</title>
+<title>LB v4.2 · 방향 입력 던지기 + 착지 원 + 빨간 연쇄 + 강화 연출</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#07080c;color:#fff;overscroll-behavior:none;touch-action:none;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
@@ -246,7 +246,8 @@ function release3D(res,isCrit){const n=res.dice.length,L=layoutSlots(n),na=dice3
   seq3.L=L;seq3.res=res;seq3.isCrit=isCrit;seq3.held=false;
   for(let i=0;i<na;i++){const d=dice3[i],nd=res.dice[i],u=Math.min(1,d.age/d.T),old=pose(d,u),s=1-Math.pow(1-u,2.4),slot=L.out[i];
     if(s<0.999){d.x0=(old.p[0]-slot[0]*s)/(1-s);d.z0=(old.p[2]-slot[1]*s)/(1-s);}
-    Object.assign(d,{v:nd.v,base:nd.base,up:nd.up,ok:nd.ok,crit:nd.crit});d.qOff=null;aimDie(d,slot);
+    // v4.2: 최종 눈으로 몰래 다시 겨누지 않는다. 기본 눈(base)으로 착지하고, 강화는 멈춘 뒤 제자리 연출(updUp)로 바꾼다
+    Object.assign(d,{v:nd.base,vFin:nd.v,base:nd.base,up:nd.up,tried:nd.tried,ok:nd.ok,crit:nd.crit});d.qOff=null;aimDie(d,slot);
     const nw=pose(d,u);d.qOff=qMul(old.q,qInv(nw.q));d.relU=u;}
   // v4.1: 연쇄 주사위는 그 연쇄를 일으킨 6 주사위(부모)가 멈춘 뒤 그 옆에서 튀어나온다
   const six=res.dice.map((d,j)=>j).filter(j=>!res.dice[j].chain&&res.dice[j].v===6);
@@ -260,6 +261,41 @@ function chainFx(c){const s=proj([c.from[0],0.6,c.from[1]]),now=performance.now(
   burst(s[0],s[1],TUNE41.P_CHAIN,PAL.chain,620,{size:1.2,g:-80});wave(s[0],s[1],70,0.32,'255,60,70',5);wave(s[0],s[1],34,0.18,'255,240,240',2);
   bloom=Math.max(bloom,TUNE41.BLOOM);bloomCol='255,40,55';addTrauma(TUNE41.TRAUMA);kick(TUNE41.PUNCH);hitstopUntil=Math.max(hitstopUntil,now+TUNE41.HITSTOP_MS);
   SFX.chain();label(s[0],s[1]-46,'연쇄!','','#ff4d5e');}
+// ---------- v4.2 강화 연출: 기운 모임 → (①) 떠올라 회전 / (②) 제자리 한 칸 구름 → 새 눈으로 내려앉음 ----------
+function upTarget(d,m2){const vF=d.vFin;
+  if(!m2)return qMul(qAxis([0,1,0],rnd(-Math.PI,Math.PI)),FACE_Q[vF]);   // ①: 위쪽 축 둘레 회전은 윗면을 바꾸지 않으므로 방향은 자유
+  if(vF===d.v)return d.qA;                                                // ② 이미 6: 그대로
+  for(const ax of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]]){const q=qMul(qAxis(ax,Math.PI/2),d.qA);if(topFace(q)===vF){d.stepAx=ax;d.stepAng=Math.PI/2;return q;}}
+  d.stepAx=[1,0,0];d.stepAng=Math.PI;return qMul(qAxis([1,0,0],Math.PI),d.qA);}   // 맞은편 눈(3→4)은 두 칸
+function updUp(d){const m2=G.mode===2,Tm=m2?TUNE42.STEP_MS:TUNE42.UP_MS,c=m2?TUNE42.STEP_CHARGE:TUNE42.CHARGE,u=clamp((gtime-d.upT0)/Tm,0,1);
+  if(!d.upInit){d.upInit=1;d.qA=d.q.slice();d.pA=d.pos.slice();d.keep=d.vFin===d.v;d.upAx=vnorm([rnd(-1,1),rnd(-0.2,0.2),rnd(-1,1)]);d.qB=upTarget(d,m2);SFX.charge(m2);}
+  const s=proj([d.pA[0],0.5,d.pA[2]]);
+  if(u<c){d.upCh=u/c;d.hi=0.9*d.upCh;d.pos=d.pA.slice();
+    const r=46*(1-d.upCh)+14;for(let i=0;i<TUNE42.P_RISE;i++){const a=Math.random()*PI2;burst(s[0]+Math.cos(a)*r,s[1]+Math.sin(a)*r*0.5,1,PAL.up,40,{g:-380,dir:-Math.PI/2,size:1.3,life:0.9});}
+    return;}
+  const k=(u-c)/(1-c);d.upCh=1;
+  if(!m2){const e=1-Math.pow(1-k,2.2);
+    d.pos=[d.pA[0],d.pA[1]+TUNE42.LIFT*Math.sin(Math.PI*Math.min(1,k*1.05)),d.pA[2]];
+    d.q=qMul(qAxis(d.upAx,TUNE42.SPINS*PI2*(1-e)),qSlerp(d.qA,d.qB,e));d.hi=0.9*(1-k);}
+  else if(d.keep){d.q=qMul(qAxis([1,0,0],0.22*Math.sin(PI2*k)),d.qA);d.hi=0.9*(1-k);}
+  else{const e=k*k*(3-2*k);d.q=qMul(qAxis(d.stepAx,d.stepAng*e),d.qA);
+    d.pos=[d.pA[0],d.pA[1]+0.5*(Math.SQRT2*Math.sin(Math.PI/4+((d.stepAng*e)%(Math.PI/2)))-1),d.pA[2]];d.hi=0.9*(1-k);}
+  if(u<1)return;
+  d.q=d.qB.slice();d.pos=d.pA.slice();d.upDone=true;d.upCh=0;d.hi=0;const b=d.v;d.v=d.vFin;
+  const top=topFace(d.q);__v3.log.push({want:d.v,top,ok:top===d.v,chain:false,stage:'fin'});if(top!==d.v)console.error('강화 후 윗면 불일치',d.v,top);
+  const now=performance.now();
+  if(d.keep){burst(s[0],s[1],10,['#9fe9d0','#c8d6e0','#ffffff'],160,{g:-60,size:0.8});wave(s[0],s[1],30,0.25,'160,220,210',2);SFX.keep();addTrauma(TUNE42.KEEP_TRAUMA);
+    label(s[0],s[1]-48,'유지','','rgba(190,214,226,.85)');}
+  else{burst(s[0],s[1],TUNE42.P_LAND,PAL.up,420,{g:-120,size:1.1});wave(s[0],s[1],58,0.32,'92,242,166',4);wave(s[0],s[1],30,0.2,'230,255,245',2);
+    hitstopUntil=Math.max(hitstopUntil,now+TUNE42.HITSTOP_MS);addTrauma(TUNE42.TRAUMA);kick(TUNE42.PUNCH);bloom=Math.max(bloom,0.25);bloomCol='92,242,166';SFX.clack(0.7);SFX.up();}
+  for(const c2 of dice3)if(c2.pending&&c2.parent===d.idx)spawnChain(c2,d);}   // 강화로(또는 그대로) 6이면 여기서 빨간 연쇄 주사위가 이어짐
+// 기운 모임 링(효과 캔버스): 바깥에서 안으로 좁혀지는 고리 + 도는 호 3개
+function drawUpFx(x,y,r0,ch,now,col){if(ch<=0)return;const r=r0*(1.9-0.9*ch),a=0.25+0.6*ch;ctx.globalCompositeOperation='lighter';
+  const g=ctx.createRadialGradient(x,y,0,x,y,r*1.3);g.addColorStop(0,`rgba(${col},${0.45*ch})`);g.addColorStop(1,`rgba(${col},0)`);ctx.fillStyle=g;ctx.fillRect(x-r*1.3,y-r*1.3,r*2.6,r*2.6);
+  const bw=r*0.7,bh=r*2.6,gb=ctx.createLinearGradient(0,y-bh,0,y);gb.addColorStop(0,`rgba(${col},0)`);gb.addColorStop(1,`rgba(${col},${0.32*ch})`);ctx.fillStyle=gb;ctx.fillRect(x-bw/2,y-bh,bw,bh);   // 위로 솟는 빛기둥
+  ctx.strokeStyle=`rgba(${col},${a})`;ctx.lineWidth=2.5;ctx.beginPath();ctx.ellipse(x,y,r,r*0.55,0,0,PI2);ctx.stroke();
+  ctx.lineWidth=3.5;for(let i=0;i<3;i++){const s0=now/140+i*PI2/3;ctx.beginPath();ctx.ellipse(x,y,r*0.8,r*0.44,0,s0,s0+0.9);ctx.stroke();}
+  ctx.globalCompositeOperation='source-over';}
 function roll3D(res,isCrit){launch3D(res.dice.filter(d=>!d.chain).map(d=>d.v),false);release3D(res,isCrit);}
 function pose(d,u){const H3=TUNE3.HOPS,UG=H3[H3.length-1][1];
   const s=1-Math.pow(1-u,2.4),x=d.x0+(d.slot[0]-d.x0)*s,z=d.z0+(d.slot[1]-d.z0)*s;let y=0.5,th,phi=0,yj=0;
@@ -285,15 +321,19 @@ function upd3D(gdt,rdt){
       const ps=pose(d,u);d.pos=ps.p;d.q=ps.q;
       if(d._tip!==undefined&&d._tip>d.lastTip){if(d.lastTip>=0)SFX.clack(0.18);d.lastTip=d._tip;}
       if(u>=1){d.settled=true;d.setAt=gtime;d.q=pose(d,1).q;   // 궤적의 마지막 자세 그대로 (보정·스냅 없음)
-        const top=topFace(d.q);__v3.log.push({want:d.v,top,ok:top===d.v,chain:!!d.chain});if(top!==d.v)console.error('윗면 불일치',d.v,top);
-        for(const c of dice3)if(c.pending&&c.parent===d.idx)spawnChain(c,d);}
+        const top=topFace(d.q);__v3.log.push({want:d.v,top,ok:top===d.v,chain:!!d.chain,stage:d.chain?'chain':'base'});if(top!==d.v)console.error('윗면 불일치',d.v,top);
+        if(!d.tried)for(const c of dice3)if(c.pending&&c.parent===d.idx)spawnChain(c,d);}   // 강화 대상이면 연쇄는 강화 연출 뒤(updUp)
       else allDone=false;}
-    else if(gtime-d.setAt>=TUNE3.HILITE_DELAY_MS&&!d.lit){d.lit=true;
+    else if(d.tried&&!d.upDone){allDone=false;if(d.upT0!=null&&gtime>=d.upT0)updUp(d);}
+    else if(gtime-d.setAt>=TUNE3.HILITE_DELAY_MS&&!d.lit&&seq3.revealAt!=null&&gtime>=seq3.revealAt){d.lit=true;
       if(d.crit){const s=proj([d.pos[0],0.5,d.pos[2]]);burst(s[0],s[1],TUNE.P_DIE_CRIT,PAL.perfect,360,{size:1,g:-60});wave(s[0],s[1],50,0.35,'255,211,74',3);SFX.gold();addTrauma(0.08);bloom=Math.max(bloom,0.3);}
-      else if(d.ok)SFX.clack(0.12);
-      if(d.up){const s=proj([d.pos[0],0.5,d.pos[2]]);onUpLit(s[0],s[1]);}}
+      else if(d.ok)SFX.clack(0.12);}
     if(d.lit){const k=Math.min(1,gdt*8);d.gold+=((d.crit?1:0)-d.gold)*k;d.hi+=((d.ok&&!d.crit?1:0)-d.hi)*k;d.dim+=((d.ok?0:1)-d.dim)*k;}
     if(!d.lit)allDone=false;}
+  // v4.2: 기본 눈 주사위(연쇄 제외)가 모두 멈추면 강화 순서를 정한다. 강화가 없으면 바로 결과 공개
+  if(seq3.res&&!seq3.upPlan&&dice3.filter(d=>!d.chain).every(d=>d.settled)){seq3.upPlan=1;let k=0,end=gtime;
+    for(const d of dice3)if(d.tried){d.upT0=gtime+TUNE42.START_MS+k*TUNE42.STAGGER_MS;end=d.upT0+(G.mode===2?TUNE42.STEP_MS:TUNE42.UP_MS);k++;}
+    seq3.revealAt=k?end+TUNE42.REVEAL_GAP_MS:gtime;}
   if(allDone&&!seq3.doneAt)seq3.doneAt=gtime+200;
   // 주사위끼리 스칠 때: 살짝 밀어내고 딸깍 + 미세 셰이크 (쌍마다 1번)
   for(let i=0;i<dice3.length;i++)for(let j=i+1;j<dice3.length;j++){const a=dice3[i],b=dice3[j];if(gtime<a.t0||gtime<b.t0||(a.settled&&b.settled))continue;
@@ -387,6 +427,23 @@ const TUNE41={
   BLOOM:0.55, TRAUMA:0.45, PUNCH:0.07, HITSTOP_MS:45,
 };
 window.__force6=0;       // 디버그: 콘솔에서 __force6=2 로 두면 다음 판 기본 눈 앞 2개를 6으로 강제 (배포 기본값 0 = 끔)
+// ================= v4.2 상수 (강화 연출: 기본 눈으로 착지 → 제자리에서 다시 굴러 최종 눈) =================
+const TUNE42={
+  START_MS:220,          // 모든 주사위가 멈춘 뒤 첫 강화 연출까지
+  STAGGER_MS:240,        // 강화 주사위끼리 시차 (연출 길이보다 짧아 겹쳐 진행)
+  UP_MS:640,             // ① 다시 굴림 연출 1개 길이 (모이기 + 떠올라 회전 + 내려앉기)
+  CHARGE:0.34,           // 그중 기운이 모이는 비율
+  LIFT:0.85,             // 떠오르는 높이 (주사위 1개 = 1)
+  SPINS:2,               // 떠 있는 동안 도는 바퀴 수
+  STEP_MS:400, STEP_CHARGE:0.3, // ② +1 방식: 제자리에서 한 칸 구르는 짧은 버전
+  REVEAL_GAP_MS:120,     // 마지막 강화가 끝난 뒤 결과 색을 켜기까지
+  P_RISE:3,              // 모이는 동안 프레임마다 솟는 빛 입자 수
+  P_LAND:34, HITSTOP_MS:55, TRAUMA:0.22, PUNCH:0.045, // 새 눈으로 내려앉을 때
+  KEEP_TRAUMA:0.05,      // "유지"는 약하게
+};
+// 디버그(배포 기본값 null = 끔): __forceBase=[3,2,5,4] 기본 눈 강제, __forceUp=[6,0,1,0] 해당 주사위를 강화 대상으로 만들고
+//   ① 방식의 다시 굴린 값을 지정(6이면 높은 값 6, 1이면 "유지"), ② 방식은 0이 아니면 +1 대상. 0 = 강제 안 함
+window.__forceBase=null;window.__forceUp=null;
 // 난이도: 1단계 화살표 수 n·제한 시간 T(ms) / 2단계 원 닫히는 시간 close·완벽 ±perf·성공 ±good·원 사이 간격 gap(ms)
 const DIFF={
   easy:  {n:4,T:4500,close:900,perf:70,good:140,gap:520},
@@ -403,8 +460,9 @@ function modsOf(tier,miss){return{critT:tier==='crit2'?4:tier==='crit1'?5:6,accM
 const R6=()=>1+Math.floor(Math.random()*6);
 function upgradeV(v,mode){return mode===2?Math.min(6,v+1):Math.max(v,R6());}   // ① 다시 굴려 높은 값 ② 눈 +1
 function upgradeProb(r,allP,P){if(r==='P')return Math.min(1,(P+(allP?TUNE4.ALL_PERFECT_BONUS:0))/100);if(r==='S')return P/200;return 0;}
-function applyS2(base,results,P,mode){const allP=results.length>0&&results.every(r=>r==='P');
-  return base.map((v,i)=>Math.random()<upgradeProb(results[i],allP,P)?upgradeV(v,mode):v);}
+function applyS2(base,results,P,mode){const allP=results.length>0&&results.every(r=>r==='P'),tried=[];
+  const out=base.map((v,i)=>{const t=Math.random()<upgradeProb(results[i],allP,P);tried.push(t);return t?upgradeV(v,mode):v;});
+  out.tried=tried;return out;}   // v4.2: tried = 다시 굴린 주사위(값이 그대로여도 true)
 // 최종 눈(fin)을 자연 눈으로 보고 판정: 1 실패, 6 치명·연쇄, 치명 기준(critT) 이상 치명
 function finalize(m,base,fin){
   const p=Object.assign({},ATK,TGT),t=hitTarget(p.acc+m.accMod,p.agi),dn=Math.max(1,p.pow-p.tou),dc=dn+p.cd;
@@ -472,6 +530,8 @@ const SFX={
   clack(v){v=v==null?1:v;const f=2400+Math.random()*900;noise(0.035,0.28*v,'bandpass',f,0,3);tone('square',f*0.6,f*0.3,0.025,0.04*v);if(v>0.5)tone('sine',420+Math.random()*120,160,0.06,0.22*v);},
   gold(){tone('triangle',1760,1760,0.25,0.1);tone('sine',2637,2637,0.3,0.06,0.02);},
   up(){[784,1047,1319].forEach((f,i)=>tone('triangle',f,f,0.16,0.1,i*0.055));},
+  charge(short){const d=short?0.16:0.24;tone('sine',220,880,d,0.12);tone('triangle',330,1320,d,0.05,0.02);noise(d,0.08,'bandpass',1800,0,2);},   // v4.2 기운 모임(올라가는 충전음)
+  keep(){tone('triangle',660,560,0.14,0.07);noise(0.06,0.05,'lowpass',900);},   // v4.2 유지(약하게)
   chain(){noise(0.03,0.5,'highpass',5200,0,1.2);tone('square',2600,900,0.07,0.09);tone('sawtooth',1480,1470,0.16,0.07,0.01);tone('sine',260,70,0.16,0.45);noise(0.12,0.22,'bandpass',3400,0.015,4);},
   dmg(c){tone('sine',c?150:200,45,0.35,0.6);noise(0.08,0.35,'lowpass',900);if(c)tone('sawtooth',80,40,0.3,0.12);},
 };
@@ -556,7 +616,7 @@ function critImpact(tier){const now=performance.now(),big=tier==='crit2';
 
 // ---------- 던지기: 기본 눈은 여기서 정한다 ----------
 function throwDice(){const now=performance.now();
-  G.mods=modsOf(G.tier,(G.timeout&&OPT.penalty)?G.mistakes:0);G.base=Array.from({length:ATK.atk},R6);for(let i=0;i<Math.min(window.__force6|0,G.base.length);i++)G.base[i]=6;
+  G.mods=modsOf(G.tier,(G.timeout&&OPT.penalty)?G.mistakes:0);G.base=Array.from({length:ATK.atk},R6);for(let i=0;i<Math.min(window.__force6|0,G.base.length);i++)G.base[i]=6;if(window.__forceBase)window.__forceBase.forEach((v,i)=>{if(v&&i<G.base.length)G.base[i]=v;});
   G.s2on=!!OPT.stage2;G.P=OPT.P;G.mode=OPT.mode;G.direct=OPT.direct;G.throwAt=now;
   phase='air';pad.classList.add('off');cam.zoomT=1;tension=0;SFX.swish();
   setHint(G.s2on?(G.direct?'원이 안쪽 고리와 겹칠 때 그 주사위를 탭':'원이 안쪽 고리와 겹칠 때 아무 곳이나 탭 (키: Space)'):'');
@@ -587,8 +647,9 @@ function updAir(now){
   if(S2&&S2.doneAt&&!G.released&&now>=S2.doneAt+TUNE4.RELEASE_DELAY_MS)doRelease(now);}
 function doRelease(now){G.released=true;
   const results=S2?S2.rings.map(r=>r.res):[];G.results=results;G.offs=S2?S2.rings.map(r=>r.off==null?null:Math.round(r.off)):[];
-  const fin=G.s2on?applyS2(G.base,results,G.P,G.mode):G.base.slice();
-  const res=finalize(G.mods,G.base,fin);G.out=res;info.style.opacity=0;if(S2)SFX.slowOut();
+  const fin=G.s2on?applyS2(G.base,results,G.P,G.mode):G.base.slice();if(!fin.tried)fin.tried=fin.map(()=>false);
+  const fu=window.__forceUp;if(fu)fu.forEach((r,i)=>{if(r&&i<fin.length){fin.tried[i]=true;fin[i]=G.mode===2?Math.min(6,G.base[i]+1):Math.max(G.base[i],r);}});
+  const res=finalize(G.mods,G.base,fin);res.dice.forEach((d,i)=>d.tried=!d.chain&&!!fin.tried[i]);G.tried=fin.tried.map(t=>t?1:0).join('');G.out=res;info.style.opacity=0;if(S2)SFX.slowOut();
   const isCrit=G.tier!=='normal';phase='roll';
   if(USE3D)release3D(res,isCrit);else rollDice(res,isCrit);}
 function ringGeom(i){
@@ -601,12 +662,24 @@ function ringGeom(i){
 function rollDice(res,isCrit){phase='roll';const n=res.dice.length,s=Math.min(46,(W-40)/(n+0.6)/1.2),gap=s*0.22,tw=n*s+(n-1)*gap;
   const y=Math.min(cy+R+RT+s*0.9,H*0.80),now=performance.now();
   dice=res.dice.map((d,i)=>({...d,x0:cx+rnd(-10,10),y0:cy+rnd(-10,10),x1:cx-tw/2+s/2+i*(s+gap),y1:y,s,t0:now+i*85+(d.chain?220:0),dur:560,spin:rnd(4,7)*(Math.random()<.5?-1:1),shown:1,lastSw:0,settled:false}));
-  dieSeq={res,isCrit,doneAt:Math.max(...dice.map(d=>d.t0+d.dur))+230,shownDmg:false};}
+  // v4.2: 강화 대상은 멈춘 뒤 차례로 강화, 연쇄 주사위는 그 뒤에 나온다
+  const baseEnd=Math.max(...dice.filter(d=>!d.chain).map(d=>d.t0+d.dur)),m2=G.mode===2,Tm=m2?TUNE42.STEP_MS:TUNE42.UP_MS;let k=0,end=baseEnd;
+  for(const d of dice)if(d.tried){d.upT0=baseEnd+TUNE42.START_MS+k*TUNE42.STAGGER_MS;end=d.upT0+Tm;k++;}
+  if(k)for(const d of dice)if(d.chain)d.t0+=end-baseEnd+TUNE41.POP_DELAY_MS;
+  dieSeq={res,isCrit,revealAt:k?end+TUNE42.REVEAL_GAP_MS:baseEnd,doneAt:Math.max(end,...dice.map(d=>d.t0+d.dur))+230,shownDmg:false};}
 function updDice(now,gdt,rdt){if(USE3D){upd3D(gdt,rdt);return;}if(!dieSeq)return;
   for(const d of dice){if(d.chain&&!d.fx&&now>=d.t0){d.fx=1;burst(d.x0,d.y0,TUNE41.P_CHAIN,PAL.chain,560,{g:-80});wave(d.x0,d.y0,60,0.3,'255,60,70',4);SFX.chain();label(d.x0,d.y0-30,'연쇄!','','#ff4d5e');addTrauma(TUNE41.TRAUMA);}
+    if(d.tried&&d.settled&&!d.upDone&&now>=d.upT0){const m2=G.mode===2,c=m2?TUNE42.STEP_CHARGE:TUNE42.CHARGE,u=clamp((now-d.upT0)/(m2?TUNE42.STEP_MS:TUNE42.UP_MS),0,1);
+      if(!d.upInit){d.upInit=1;SFX.charge(m2);}
+      if(u<c){d.upCh=u/c;for(let i=0;i<TUNE42.P_RISE;i++){const a=Math.random()*PI2,r=d.s*(1-d.upCh)+8;burst(d.x1+Math.cos(a)*r,d.y1+Math.sin(a)*r*0.5,1,PAL.up,40,{g:-380,dir:-Math.PI/2,size:0.9,life:0.8});}}
+      else{const k2=(u-c)/(1-c);d.upCh=1-k2;d.lift=m2?0.25*Math.sin(Math.PI*k2):1.1*Math.sin(Math.PI*k2);d.rot=(m2?0.5:2)*PI2*k2;if(now-d.lastSw>55){d.shown=1+((Math.random()*6)|0);d.lastSw=now;}}
+      if(u>=1){d.upDone=true;d.upCh=0;d.lift=0;d.rot=0;d.shown=d.v;
+        if(d.v===d.base){burst(d.x1,d.y1,10,['#9fe9d0','#c8d6e0','#ffffff'],160,{g:-60,size:0.8});SFX.keep();label(d.x1,d.y1-d.s*1.1,'유지','','rgba(190,214,226,.85)');}
+        else{onUpLit(d.x1,d.y1);hitstopUntil=Math.max(hitstopUntil,now+TUNE42.HITSTOP_MS);addTrauma(TUNE42.TRAUMA);kick(TUNE42.PUNCH);}}
+      continue;}
     if(now<d.t0||d.settled)continue;const k=(now-d.t0)/d.dur;
-    if(k>=1){d.settled=true;d.shown=d.v;SFX.clack();if(d.crit){burst(d.x1,d.y1,TUNE.P_DIE_CRIT,PAL.perfect,340,{size:1,g:-60});wave(d.x1,d.y1,d.s*1.3,0.3,'255,211,74',3);SFX.gold();addTrauma(0.08);}
-      if(d.up)onUpLit(d.x1,d.y1);continue;}
+    if(k>=1){d.settled=true;d.shown=d.tried?d.base:d.v;SFX.clack();if(d.crit&&!d.tried){burst(d.x1,d.y1,TUNE.P_DIE_CRIT,PAL.perfect,340,{size:1,g:-60});wave(d.x1,d.y1,d.s*1.3,0.3,'255,211,74',3);SFX.gold();addTrauma(0.08);}
+      continue;}
     if(now-d.lastSw>55){d.shown=1+((Math.random()*6)|0);d.lastSw=now;}}
   if(!dieSeq.shownDmg&&now>=dieSeq.doneAt){dieSeq.shownDmg=true;showDmg(dieSeq.res,dieSeq.isCrit);}}
 function showDmg(res,isCrit){const c=res.dice.some(d=>d.crit&&d.ok);
@@ -663,7 +736,7 @@ function drawLabels(now){ctx.textAlign='center';
 function upMark(x,y,now,b,v){const bob=Math.sin(now/220)*2.5;y+=bob;
   ctx.globalCompositeOperation='lighter';const g=ctx.createRadialGradient(x,y,0,x,y,26);g.addColorStop(0,'rgba(92,242,166,.5)');g.addColorStop(1,'rgba(92,242,166,0)');ctx.fillStyle=g;ctx.fillRect(x-26,y-26,52,52);
   ctx.globalCompositeOperation='source-over';ctx.fillStyle='#5cf2a6';ctx.shadowColor='#5cf2a6';ctx.shadowBlur=10;ctx.beginPath();ctx.moveTo(x,y-4);ctx.lineTo(x+10,y+9);ctx.lineTo(x-10,y+9);ctx.closePath();ctx.fill();ctx.shadowBlur=0;
-  ctx.font='900 14px system-ui,sans-serif';ctx.textAlign='center';ctx.fillStyle='#d8ffec';ctx.fillText(b+'→'+v,x,y-9);}
+  ctx.font='900 14px system-ui,sans-serif';ctx.textAlign='center';ctx.fillStyle='#d8ffec';ctx.fillText(b+' → '+v,x,y-9);}
 function draw(now){ctx=ctx0;
   ctx.setTransform(DPR,0,0,DPR,0,0);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;
   const bg=ctx.createRadialGradient(cx,cy,R*0.2,cx,cy,Math.hypot(W,H)*0.6);bg.addColorStop(0,'#141a28');bg.addColorStop(1,'#06070b');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
@@ -684,18 +757,20 @@ function draw(now){ctx=ctx0;
   ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
   // 2D 대체 주사위
   for(const d of dice){if(now<d.t0)continue;const k=Math.min(1,(now-d.t0)/d.dur),e=1-Math.pow(1-k,3),hop=Math.sin(k*Math.PI)*-d.s*1.4*(1-k*0.5);
-    const x=d.x0+(d.x1-d.x0)*e,y=d.y0+(d.y1-d.y0)*e+hop,rot=d.spin*(1-e)*Math.PI,s=d.s*(0.5+0.5*e);
-    const gold=d.settled&&d.crit,dim=d.settled&&!d.ok;
+    const x=d.x0+(d.x1-d.x0)*e,y=d.y0+(d.y1-d.y0)*e+hop-(d.lift||0)*d.s,rot=d.spin*(1-e)*Math.PI+(d.rot||0),s=d.s*(0.5+0.5*e);
+    const rev=d.settled&&(!d.tried||d.upDone)&&now>=dieSeq.revealAt,gold=rev&&d.crit,dim=rev&&!d.ok;
+    if(d.upCh>0)drawUpFx(d.x1,d.y1,d.s*0.75,d.upCh,now,'92,242,190');
     ctx.save();ctx.translate(x,y);ctx.rotate(rot);ctx.globalAlpha=dim?0.38:1;
     if(gold&&d.chain){ctx.fillStyle='#b0101e';}
     else if(gold){const g=ctx.createLinearGradient(-s/2,-s/2,s/2,s/2);g.addColorStop(0,'#fff1a8');g.addColorStop(0.5,'#ffcf3a');g.addColorStop(1,'#d88a10');ctx.fillStyle=g;}
     else if(d.chain)ctx.fillStyle=dim?'#5a2418':'#b0101e';
-    else ctx.fillStyle=d.settled&&d.ok?'#f4f6fa':'#c9ced8';
+    else ctx.fillStyle=rev&&d.ok?'#f4f6fa':'#c9ced8';
     rr(-s/2,-s/2,s,s,s*0.2);ctx.fill();
-    if(d.chain&&d.settled&&d.ok){ctx.strokeStyle=gold?'#ffd34a':'rgba(255,255,255,.9)';ctx.lineWidth=2;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=10;rr(-s/2,-s/2,s,s,s*0.2);ctx.stroke();ctx.shadowBlur=0;}
+    if(d.chain&&rev&&d.ok){ctx.strokeStyle=gold?'#ffd34a':'rgba(255,255,255,.9)';ctx.lineWidth=2;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=10;rr(-s/2,-s/2,s,s,s*0.2);ctx.stroke();ctx.shadowBlur=0;}
     ctx.fillStyle=gold?(d.chain?'#ffd34a':'#4a2a00'):(d.chain?'#f2eeec':'#151821');const pr=s*0.085,o=s*0.25;for(const [px,py] of PIPS[d.shown]){ctx.beginPath();ctx.arc(px*o,py*o,pr,0,PI2);ctx.fill();}
-    ctx.restore();ctx.globalAlpha=1;if(d.settled&&d.up)upMark(x,y-s*0.95,now,d.base,d.v);}
-  if(USE3D&&VP)for(const d of dice3)if(d.lit&&d.up){const p=proj([d.pos[0],1.0,d.pos[2]-0.95]);upMark(p[0],p[1],now,d.base,d.v);}
+    ctx.restore();ctx.globalAlpha=1;if(d.settled&&d.up&&d.upDone)upMark(x,y-s*0.95,now,d.base,d.v);}
+  if(USE3D&&VP)for(const d of dice3){if(d.upCh>0){const p=proj([d.pA[0],0.5,d.pA[2]]),q=proj([d.pA[0]+0.5,0.5,d.pA[2]]);drawUpFx(p[0],p[1],Math.hypot(q[0]-p[0],q[1]-p[1])*1.3,d.upCh,now,'92,242,190');}
+    if(d.upCh>0||((d.lit||d.upDone)&&d.up)){const p=proj([d.pos[0],1.0,d.pos[2]-0.95]);if((d.lit||d.upDone)&&d.up)upMark(p[0],p[1],now,d.base,d.v);}}
   if(S2&&phase==='air')drawRings(now);
   drawLabels(now);
   if(bloom>0.01){ctx.globalCompositeOperation='lighter';const g=ctx.createRadialGradient(cx,cy,0,cx,cy,Math.hypot(W,H)*0.55);
