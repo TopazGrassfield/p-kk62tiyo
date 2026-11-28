@@ -84,6 +84,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#07080c;color:#fff;ove
     <div class="seg" data-o="direct"><button data-v="0" class="on">아무 곳 탭</button><button data-v="1">주사위 직접 탭</button></div></div>
   <div class="row"><div class="lab"><span>2단계 (착지 전 원)</span></div>
     <div class="seg" data-o="stage2"><button data-v="1" class="on">켬</button><button data-v="0">끔 (1단계만)</button></div></div>
+  <div class="row"><div class="lab"><span>타이밍 표시</span></div>
+    <div class="seg" data-o="timing"><button data-v="1" class="on">주사위 실루엣</button><button data-v="0">원</button></div></div>
   <div class="row"><div class="lab"><span>실패 주사위 깨짐</span></div>
     <div class="seg" data-o="shatter"><button data-v="1" class="on">켬</button><button data-v="0">크랙만</button></div></div>
 </div>
@@ -246,6 +248,28 @@ const TUNE52={
   WISP_BUDGET:60,                     // 기운 줄기 상한 (v4.10 불꽃 160보다 적음)
   PERFECT_THROW_BLUE:0,               // 완벽 투척 오라 색: 0 = 금색(기본), 1 = 푸른색
 };   // v4.9: 하단 요약 줄 등 디버그 글자는 ?debug일 때만
+// ================= v4.12 상수 (방향키 가독성 · 실루엣 타이밍 · 디오라마 바닥) =================
+const TUNE53={
+  // 방향 입력 패널 (화면 px)
+  ARROW_MIN:44, ARROW_MAX:56, ARROW_GAP:6, CUR_SCALE:1.3,   // 칸 크기(손가락 기준 최소 44), 칸 간격, 지금 칸 배율
+  NEXT_A:0.8,                         // 다음 칸 화살표 불투명도 (70% 이상)
+  PANEL_A:0.9, PANEL_PAD:12,          // 뒤 패널 불투명도, 안쪽 여백
+  BAR_H:12, BAR_LOW:0.25,             // 시간 막대 두께, 남은 시간이 이 비율 이하면 빨갛게 깜빡
+  SAFE_GAP:18,                        // 공중 주사위 아래 끝을 패널 위로 이만큼 띄움(px)
+  TOP_SAFE:92,                        // 공중 주사위 위 끝 한계(px) — 위쪽 버튼 줄 아래
+  ZOOM_MAX:1.6,                       // 줄이 너무 길 때 카메라가 물러나는 최대 배율
+  // 타이밍 표시
+  TIMING:1,                           // 1 = 주사위 실루엣(기본), 0 = 원
+  SIL_START_MUL:2.3,                  // 실루엣 시작 크기(주사위 배수). 원(3.2)보다 작게 → 줄 대형에서 덜 겹침
+  SIL_DIM:0.28,                       // 지금 차례가 아닌 실루엣 불투명도
+  // 디오라마 받침 (월드 단위: 주사위 1 = 1)
+  BASE:[2.85,3.9], DEPTH:0.9, BEVEL:0.1, // 받침 윗면 반폭(x)·반길이(z), 두께, 가장자리 깎임 폭
+  VIEW_PAD:[0.18,0.55],               // 결과 화면에서 받침 바깥이 보이는 여유(좌우·앞뒤)
+  CAM_END:[0.86,0.5],                 // 결과 카메라 (높이·뒤 거리) × 거리 → 받침 앞 단면이 보이게 조금 비스듬히
+  KEY:[-3.2,7.5,4.0], KEY_I:2.2,      // 따뜻한 키 라이트 위치·세기(주사위에 닿는 몫)
+  ROCKS:22, PEBBLES:60, TUFTS:26,     // 받침 위 가장자리 띠의 바위·잔돌·풀 덤불 수
+  MOTES:36,                           // 공중 먼지(빛 속에 떠다님)
+};
 // 원을 받는 주사위 수: 내림(성공률 × 주사위 수), 기준 미만이면 0. 줄 앞쪽(먼저 떨어지는 주사위)부터
 function ringCount(rate,n){return rate<TUNE49.GATE?0:Math.floor(rate*n+1e-9);}
 let FR=[],FRP=[],frSnd=0;window.__v44={brk:[],frags:0};
@@ -375,29 +399,54 @@ void main(){vec3 p=vOP,a=abs(p),n=normalize(vON);float val;vec2 uv;vec3 tu,tv;
  float l=dot(col,vec3(0.3,0.59,0.11));col=mix(col,mix(vec3(l),vec3(l)*RUST,uRed),uDim*0.85)*mix(1.0,mix(uDF.x,uDF.y,uRed),uDim); // 실패: 회색(상아) / 어두운 적갈색(빨강)
  col=mix(col*(1.0+2.2*lip),vec3(0.004,0.0035,0.003),crk);   // v4.4 금: 검은 틈 + 틈 가장자리 밝은 깨진 결
  col=(col*(2.51*col+0.03))/(col*(2.43*col+0.59)+0.14);gl_FragColor=vec4(pow(clamp(col,0.0,1.0),vec3(0.4545)),1.0);}`;
-const FLOOR_VS=`attribute vec2 aQ;uniform mat4 uVP;uniform float uS;varying vec2 vXZ;void main(){vXZ=aQ*uS;gl_Position=uVP*vec4(vXZ.x,0.0,vXZ.y,1.0);}`;
-// v4.3 던전 돌바닥: 색(uTex) + 높이(uHt) 텍스처, 높이 차로 요철 노멀 → 횃불(따뜻)·환경광(차가움)·위쪽 빛
-const FLOOR_FS=`precision highp float;varying vec2 vXZ;uniform sampler2D uTex,uHt;uniform float uA,uFl,uTile,uBump,uTI,uAmb,uSpot,uTexel;uniform vec2 uC,uWall;uniform vec3 uTorch;
-void main(){vec2 uv=vXZ/uTile;vec3 al=texture2D(uTex,uv).rgb;
- float h=texture2D(uHt,uv).r,hx=texture2D(uHt,uv+vec2(uTexel,0.0)).r,hz=texture2D(uHt,uv+vec2(0.0,uTexel)).r;
- vec3 N=normalize(vec3((h-hx)*uBump,1.0,(h-hz)*uBump)),alb=al*al,P=vec3(vXZ.x,0.0,vXZ.y),Lt=uTorch-P;float dt=length(Lt);Lt/=dt;
- vec3 col=alb*vec3(0.30,0.38,0.52)*uAmb*(0.55+0.45*h);
- col+=alb*vec3(1.0,0.56,0.24)*uFl*uTI*max(dot(N,Lt),0.0)/(1.0+0.09*dt*dt);
- float d=length(vXZ-uC);col+=alb*vec3(1.0,0.95,0.86)*uSpot*exp(-d*d/26.0)*max(dot(N,normalize(vec3(-0.25,1.0,0.35))),0.0);
- float ds=vXZ.x-uWall.x,db=vXZ.y-uWall.y;col*=(0.28+0.72*smoothstep(0.0,1.2,ds))*(0.28+0.72*smoothstep(0.0,1.2,db)); // 벽 밑 어둡게
- if(ds<0.0||db<0.0)col*=0.2;
+const FLOOR_VS=`attribute vec2 aQ;uniform mat4 uVP;uniform vec3 uS;varying vec2 vXZ;void main(){vXZ=aQ*uS.xy;gl_Position=uVP*vec4(vXZ.x,uS.z,vXZ.y,1.0);}`;
+// v4.12 디오라마: uMode 0 = 받침 윗면(판석·흙·풀 미니어처 지형), 1 = 바깥 나무 테이블(받침 그림자 + 어둠으로 사라짐)
+const FLOOR_FS=`precision highp float;varying vec2 vXZ;uniform sampler2D uTex,uHt;uniform float uA,uTile,uBump,uTexel,uMode,uDepth,uSpot;uniform vec2 uBase;uniform vec3 uKey;
+float h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x),f.y);}
+float rectD(vec2 p,vec2 b){vec2 d=abs(p)-b;return length(max(d,0.0))+min(max(d.x,d.y),0.0);}
+void main(){vec3 L=normalize(uKey),KC=vec3(1.0,0.86,0.66),AC=vec3(0.30,0.36,0.48);vec3 col;
+ if(uMode>0.5){   // 나무 테이블
+  vec2 p=vXZ;float pl=floor(p.y/1.15),gx=p.x+h21(vec2(pl,3.0))*9.0;
+  float gr=0.5+0.5*sin(gx*1.6+vn(vec2(gx*0.35,p.y*3.0+pl))*5.0+pl*1.7),ring=smoothstep(0.55,1.0,vn(vec2(gx*0.6,pl*4.0+p.y*0.8)));
+  float fy=fract(p.y/1.15),seam=1.0-0.6*(1.0-smoothstep(0.0,0.04,min(fy,1.0-fy)));   // 판자 이음매
+  vec3 alb=mix(vec3(0.075,0.040,0.022),vec3(0.17,0.095,0.050),gr*0.7+ring*0.3)*(0.85+0.3*h21(vec2(pl,7.0)))*seam;
+  float r=length(p*vec2(1.0,0.8));float pool=exp(-r*r/70.0);
+  float bd=rectD(p,uBase),sh=rectD(p-vec2(uDepth*0.42,-uDepth*0.5),uBase);   // 받침 둘레 접지 그림자 + 키 라이트 반대쪽으로 드리운 그림자
+  float occ=(0.35+0.65*smoothstep(0.0,0.9,bd))*(0.45+0.55*smoothstep(-0.3,0.6,sh));
+  col=alb*(KC*1.9*pool+AC*0.25)*occ;
+  col+=KC*0.06*pow(max(0.0,gr),8.0)*pool;   // 니스 칠 결 반짝
+  col*=smoothstep(14.0,4.0,r);
+ }else{   // 받침 윗면
+  vec2 uv=vXZ/uTile;vec3 st=texture2D(uTex,uv).rgb;
+  float h=texture2D(uHt,uv).r,hx=texture2D(uHt,uv+vec2(uTexel,0.0)).r,hz=texture2D(uHt,uv+vec2(0.0,uTexel)).r;
+  vec3 N=normalize(vec3((h-hx)*uBump,1.0,(h-hz)*uBump));
+  float e=-rectD(vXZ,uBase);   // 가장자리까지 거리
+  float n1=vn(vXZ*0.75),n2=vn(vXZ*2.7+5.0),n3=vn(vXZ*7.0);
+  vec3 slab=st*st*vec3(1.55,1.45,1.3)+vec3(0.03,0.028,0.02);                  // 판석: 따뜻한 회색
+  vec3 dirt=mix(vec3(0.30,0.19,0.10),vec3(0.42,0.28,0.15),n3);                // 흙
+  vec3 grass=mix(vec3(0.16,0.34,0.07),vec3(0.36,0.56,0.12),n3*0.7+n2*0.3);   // 풀 (미니어처답게 채도 높게)
+  float mortar=1.0-smoothstep(0.08,0.3,h);
+  float edgeG=1.0-smoothstep(0.25,1.25,e);
+  float gm=smoothstep(0.58,0.72,n1*0.6+n2*0.4+edgeG*0.42-0.12*(1.0-edgeG));
+  float dm=max(mortar,smoothstep(0.5,0.66,n2*0.7+n1*0.3+edgeG*0.25)*(1.0-gm));
+  vec3 alb=mix(mix(slab,dirt,dm),grass,max(gm,mortar*smoothstep(0.45,0.7,n2)*0.8));
+  float dif=max(dot(N,L),0.0);dif=floor(dif*4.0+0.5)/4.0*0.35+dif*0.65;   // 살짝 계단식 셰이딩
+  col=alb*(KC*1.25*dif+AC*0.55*(0.6+0.4*h));
+  float d=length(vXZ*vec2(0.9,0.7));col*=1.0+uSpot*0.45*exp(-d*d/9.0);
+  col*=0.72+0.28*smoothstep(0.0,0.35,e);   // 가장자리 살짝 어둡게(깎인 모서리 쪽)
+ }
  col=pow(col,vec3(0.4545));gl_FragColor=vec4(col*uA,uA);}`;
-// v4.3 벽돌·돌멩이 (합친 메시 1개, 꼭짓점 색)
+// v4.12 받침 단면·가장자리 깎임·바위·잔돌·풀 (합친 메시 1개, 꼭짓점 색)
 const ENV_VS=`attribute vec3 aP;attribute vec3 aN;attribute vec3 aC;attribute vec2 aF;uniform mat4 uVP;uniform vec2 uWall;varying vec3 vP,vN,vC;
 void main(){vP=aP+vec3(aF.x*uWall.x,0.0,aF.y*uWall.y);vN=aN;vC=aC;gl_Position=uVP*vec4(vP,1.0);}`;
-const ENV_FS=`precision highp float;varying vec3 vP,vN,vC;uniform sampler2D uTex;uniform float uA,uFl,uTI,uAmb,uSpot;uniform vec2 uC,uWall;uniform vec3 uTorch;
-void main(){if(vP.x<uWall.x-0.56||vP.z<uWall.y-0.56)discard;   // 두 벽이 만나는 모서리 바깥은 버림
- vec3 N=normalize(vN);vec2 t=abs(N.y)>0.6?vP.xz:(abs(N.x)>0.6?vP.zy:vP.xy);
- float g=dot(texture2D(uTex,t*0.23).rgb,vec3(0.333));vec3 alb=vC*vC*(0.45+1.6*g),Lt=uTorch-vP;float dt=length(Lt);Lt/=dt;
- vec3 col=alb*vec3(0.30,0.38,0.52)*uAmb*(0.6+0.4*N.y);
- col+=alb*vec3(1.0,0.56,0.24)*uFl*uTI*max(dot(N,Lt),0.0)/(1.0+0.09*dt*dt);
- float d=length(vP.xz-uC);col+=alb*vec3(1.0,0.95,0.86)*uSpot*exp(-d*d/26.0)*max(dot(N,normalize(vec3(-0.25,1.0,0.35))),0.0);
- col*=0.35+0.65*smoothstep(0.0,0.55,vP.y);   // 바닥과 만나는 곳 어둡게
+const ENV_FS=`precision highp float;varying vec3 vP,vN,vC;uniform sampler2D uTex;uniform float uA,uSpot;uniform vec3 uKey;
+void main(){vec3 N=normalize(vN),L=normalize(uKey);vec2 t=abs(N.y)>0.6?vP.xz:(abs(N.x)>0.6?vP.zy:vP.xy);
+ float g=dot(texture2D(uTex,t*0.31).rgb,vec3(0.333));vec3 alb=vC*vC*(0.7+1.1*g);
+ float dif=max(dot(N,L),0.0);dif=floor(dif*4.0+0.5)/4.0*0.35+dif*0.65;
+ vec3 col=alb*(vec3(1.0,0.86,0.66)*1.25*dif+vec3(0.30,0.36,0.48)*(0.45+0.25*N.y));
+ float d=length(vP.xz*vec2(0.9,0.7));col*=1.0+uSpot*0.45*exp(-d*d/9.0);
+ col*=0.55+0.45*smoothstep(-0.95,-0.1,vP.y);   // 단면 아래쪽은 어둡게(테이블에 닿는 곳)
  col=pow(col,vec3(0.4545));gl_FragColor=vec4(col*uA,uA);}`;
 // v4.3 효과 입자(점): 크기 음수 = 더하기(빛), 양수 = 덮기(먼지)
 const PT_VS=`attribute vec3 aP;attribute vec4 aC;attribute float aS;uniform mat4 uVP;uniform float uK;varying vec4 vC;varying float vAdd;
@@ -496,7 +545,43 @@ function stoneTex(S){const T=S/1024,ca=document.createElement('canvas'),ch=docum
   a.putImageData(ia,0,0);h.putImageData(ih,0,0);return{a:ca,h:ch};}
 // v4.3 벽돌 벽(뒤·왼쪽) + 무너진 벽돌 + 로우폴리 돌멩이 → 메시 1개로 합침 (꼭짓점: 위치3·노멀3·색3·이동표시2)
 //   이동표시 F: 실제 위치 = 위치 + (F.x × 옆벽 x, 0, F.y × 뒷벽 z). 주사위 수(카메라 거리)가 바뀌면 벽·돌이 화면 가장자리를 따라감
-function envMesh(){const T=TUNE43,V=[],I=[],BL=T.BRICK[0],BH=T.BRICK[1],gap=0.035,rows=Math.round(T.WALL_H/BH);let F=[0,0];
+// v4.12 디오라마 받침: 두께 있는 지형 블록(옆면 흙·돌 단면 층) + 깎인 가장자리 + 이끼 띠 + 가장자리 바위·잔돌·풀 덤불. 벽·벽돌 없음
+function envMesh(){const T=TUNE53,V=[],I=[],BX=T.BASE[0],BZ=T.BASE[1],DP=T.DEPTH,BV=T.BEVEL;let F=[0,0];
+  const quad=(p4,n,col)=>{const o=V.length/11;for(const p of p4)V.push(p[0],p[1],p[2],n[0],n[1],n[2],col[0],col[1],col[2],F[0],F[1]);I.push(o,o+1,o+2,o,o+2,o+3);};
+  const tri=(a,b,c,col)=>{let n=vnorm(vcross(vsub(b,a),vsub(c,a)));const o=V.length/11;for(const p of[a,b,c])V.push(p[0],p[1],p[2],n[0],n[1],n[2],col[0],col[1],col[2],0,0);I.push(o,o+1,o+2);};
+  // 옆면 4개: 가로 띠(위 이끼·흙 → 돌 섞인 흙 → 어두운 바닥 흙)를 칸으로 나눠 울퉁불퉁하게
+  const SEG=14,LAY=[[0,0.16,[0.27,0.40,0.12]],[0.16,0.42,[0.42,0.28,0.15]],[0.42,0.70,[0.47,0.42,0.36]],[0.70,1.0,[0.30,0.20,0.12]]];
+  const side=(ax,sg)=>{const L=ax?BZ:BX,W=ax?BX:BZ;   // ax=0: 앞/뒤(z=±BZ), ax=1: 좌/우(x=±BX)
+    for(let i=0;i<SEG;i++){const a=-L+2*L*i/SEG,b=-L+2*L*(i+1)/SEG;for(const [t0,t1,c] of LAY){const y0=-BV-(DP-BV)*t1,y1=-BV-(DP-BV)*t0,j=rnd(0.86,1.12),col=c.map(v=>v*j),
+      w0=sg*(W+(t0===0?0:rnd(-0.03,0.03))),P=(u,y)=>ax?[sg*W,y,u]:[u,y,sg*W];
+      const n=ax?[sg,0,0]:[0,0,sg];let p4=[P(a,y0),P(b,y0),P(b,y1),P(a,y1)];if((ax&&sg<0)||(!ax&&sg>0))p4=[p4[1],p4[0],p4[3],p4[2]];quad(p4,n,col);}}};
+  side(0,1);side(0,-1);side(1,1);side(1,-1);
+  // 깎인 가장자리(윗면 → 옆면을 잇는 비스듬한 띠, 이끼색)
+  const MOSS=[0.30,0.46,0.13],e=[[-BX,-BZ],[BX,-BZ],[BX,BZ],[-BX,BZ]],ei=[[-BX+BV,-BZ+BV],[BX-BV,-BZ+BV],[BX-BV,BZ-BV],[-BX+BV,BZ-BV]];
+  for(let k=0;k<4;k++){const k2=(k+1)%4,A=[ei[k][0],0,ei[k][1]],B=[ei[k2][0],0,ei[k2][1]],C=[e[k2][0],-BV,e[k2][1]],Dd=[e[k][0],-BV,e[k][1]];
+    const m=[(A[0]+C[0])/2,0,(A[2]+C[2])/2],n=vnorm([m[0]===0?0:Math.sign(m[0])*0.7,0.7,m[2]===0?0:Math.sign(m[2])*0.7]);
+    const nn=k%2?[Math.sign(e[k][0]+e[k2][0])*0.7,0.7,0]:[0,0.7,Math.sign(e[k][1]+e[k2][1])*0.7];const o=V.length/11;
+    for(const p of[A,B,C,Dd])V.push(p[0],p[1],p[2],nn[0],nn[1],nn[2],MOSS[0],MOSS[1],MOSS[2],0,0);I.push(o,o+2,o+1,o,o+3,o+2);}
+  // 바위·잔돌(정이십면체 찌그러뜨림)
+  const t5=(1+Math.sqrt(5))/2,IV=[[-1,t5,0],[1,t5,0],[-1,-t5,0],[1,-t5,0],[0,-1,t5],[0,1,t5],[0,-1,-t5],[0,1,-t5],[t5,0,-1],[t5,0,1],[-t5,0,-1],[-t5,0,1]].map(vnorm),
+    IF=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  const rock=(x,z,s,col)=>{const yaw=rnd(0,6.28),sq=rnd(0.5,0.85),cy0=s*0.22;
+    const vs=IV.map(p=>{const k=s*rnd(0.72,1.18),xx=p[0]*k,zz=p[2]*k;return[x+xx*Math.cos(yaw)-zz*Math.sin(yaw),cy0+p[1]*k*sq,z+xx*Math.sin(yaw)+zz*Math.cos(yaw)];});
+    for(const [i0,i1,i2] of IF){let n=vnorm(vcross(vsub(vs[i1],vs[i0]),vsub(vs[i2],vs[i0])));const fc=[0,1,2].map(c=>(vs[i0][c]+vs[i1][c]+vs[i2][c])/3);
+      if(vdot(n,vsub(fc,[x,cy0,z]))<0)n=n.map(v=>-v);const o=V.length/11,cc=col.map(v=>v*rnd(0.88,1.1));
+      for(const p of [vs[i0],vs[i1],vs[i2]])V.push(p[0],p[1],p[2],n[0],n[1],n[2],cc[0],cc[1],cc[2],0,0);I.push(o,o+1,o+2);}};
+  const stoneC=()=>{const L=rnd(0.52,0.72),t=Math.random();return t<0.6?[L,L*0.96,L*0.9]:t<0.85?[L*1.05,L*0.9,L*0.74]:[L*0.82,L*0.9,L*0.96];};
+  // 가장자리 띠 위의 자리(주사위가 멈추는 가운데 줄 대형과 굴러오는 길은 비움)
+  const rim=(w)=>{for(let t=0;t<40;t++){const r=Math.random(),x=r<0.5?(Math.random()<0.5?-1:1)*rnd(BX-w,BX-0.12):rnd(-BX+0.12,BX-0.12),z=r<0.5?rnd(-BZ+0.12,BZ-0.12):(Math.random()<0.5?-1:1)*rnd(BZ-w,BZ-0.12);
+    if(Math.abs(x)<1.55&&Math.abs(z)<2.75)continue;return[x,z];}return[BX-0.2,BZ-0.2];};
+  for(let i=0;i<T.ROCKS;i++){const p=rim(0.75);rock(p[0],p[1],rnd(0.12,0.3),stoneC());}
+  for(let i=0;i<T.PEBBLES;i++){const p=i%3?rim(1.1):[rnd(-BX+0.2,BX-0.2),rnd(-BZ+0.2,BZ-0.2)];rock(p[0],p[1],rnd(0.025,0.06),stoneC());}
+  // 풀 덤불: 가늘고 뾰족한 잎 3~5장을 부채꼴로
+  for(let i=0;i<T.TUFTS;i++){const p=rim(0.9),nb=3+(Math.random()*3|0),G=Math.random()<0.5?[0.36,0.62,0.16]:[0.50,0.66,0.18];
+    for(let b=0;b<nb;b++){const a=rnd(0,6.28),h=rnd(0.16,0.32),w=rnd(0.025,0.04),lx=Math.cos(a),lz=Math.sin(a),tx=p[0]+lx*h*0.45,tz=p[1]+lz*h*0.45;
+      const b0=[p[0]-lz*w,0,p[1]+lx*w],b1=[p[0]+lz*w,0,p[1]-lx*w],tp=[tx,h,tz],c=G.map(v=>v*rnd(0.85,1.15));tri(b0,b1,tp,c);tri(b1,b0,tp,c);}}
+  return{V:new Float32Array(V),I:new Uint16Array(I)};}
+function envMesh_v411_unused(){const T=TUNE43,V=[],I=[],BL=T.BRICK[0],BH=T.BRICK[1],gap=0.035,rows=Math.round(T.WALL_H/BH);let F=[0,0];   // v4.11 벽돌 벽(참고용, 호출 안 함)
   const quad=(p4,n,col)=>{const o=V.length/11;for(const p of p4)V.push(p[0],p[1],p[2],n[0],n[1],n[2],col[0],col[1],col[2],F[0],F[1]);I.push(o,o+1,o+2,o,o+2,o+3);};
   const box=(cx,cz,y0,y1,hx,hz,yaw,col)=>{const c=Math.cos(yaw),s=Math.sin(yaw),P=(x,y,z)=>[cx+x*c-z*s,y,cz+x*s+z*c],Rn=n=>[n[0]*c-n[2]*s,n[1],n[0]*s+n[2]*c];
     const a=P(-hx,y0,-hz),b=P(hx,y0,-hz),e=P(hx,y0,hz),f=P(-hx,y0,hz),A=P(-hx,y1,-hz),B=P(hx,y1,-hz),E=P(hx,y1,hz),Fp=P(-hx,y1,hz);
@@ -697,12 +782,11 @@ function fireCol(d){const lv=d.fire||0,g=lv?TUNE52.BODY_GLOW[lv]*(d.fireK||0):0,
   return[c[0]*g+w+o,c[1]*g+w+o,c[2]*g+w+o];}
 function updP3(gdt,rdt){FIREN=0;for(let i=P3.length-1;i>=0;i--){const p=P3[i],dt=p.real?rdt:gdt;p.t+=dt;if(p.t>=p.max){P3.splice(i,1);continue;}if(p.fire)FIREN++;
     const f=Math.exp(-p.dr*dt);p.vx*=f;p.vy*=f;p.vz*=f;p.vy+=p.g*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;if(p.y<0.02){p.y=0.02;p.vy*=-0.3;}}
-  const T=TUNE43,X0=wallOff[0],Z0=wallOff[1];   // 공중 먼지: 방 안을 천천히 떠다님
-  while(MOTES.length<T.MOTES)MOTES.push({x:rnd(X0,-X0),y:rnd(0.2,3.2),z:rnd(Z0,-Z0*1.3),ph:rnd(0,PI2),sp:rnd(0.6,1.4),s:rnd(0.03,0.07)});
+  const T=TUNE43,X0=wallOff[0],Z0=wallOff[1];   // 공중 먼지: 받침 위를 천천히 떠다님 (v4.12: 횃불 없음)
+  while(MOTES.length<TUNE53.MOTES)MOTES.push({x:rnd(X0,-X0),y:rnd(0.2,3.2),z:rnd(Z0,-Z0),ph:rnd(0,PI2),sp:rnd(0.6,1.4),s:rnd(0.03,0.07)});
   for(const m of MOTES){m.ph+=rdt*m.sp;m.x+=Math.sin(m.ph*0.7)*0.05*rdt+0.04*rdt;m.y+=Math.cos(m.ph*0.5)*0.04*rdt;m.z+=Math.sin(m.ph*0.3+1)*0.04*rdt;
-    if(m.x>-X0+0.3)m.x=X0;if(m.y<0.1||m.y>3.4)m.y=rnd(0.3,3);}
-  if(tray>0.05&&Math.random()<0.8){const t=torchPos();p3(t[0]+rnd(-0.05,0.05),t[1],t[2]+rnd(-0.05,0.05),rnd(-0.1,0.1),rnd(0.8,1.3),rnd(-0.1,0.1),rnd(0.25,0.4),[1.0,rnd(0.45,0.62),0.16],0.9,0.26,0.05,1,0,1.5,1);}}  // 횃불 불꽃
-let wallOff=[-2.6,-5.6],torchFl=1;
+    if(m.x>-X0)m.x=X0;if(m.y<0.1||m.y>3.4)m.y=rnd(0.3,3);}}
+let wallOff=[-TUNE53.BASE[0],-TUNE53.BASE[1]],torchFl=1;   // v4.12: 벽 대신 받침 가장자리
 const torchPos=()=>[wallOff[0]+0.3,TUNE43.TORCH_Y,wallOff[1]*TUNE43.TORCH_ZK];
 // ================= v4.4 실패 주사위: 크랙 → 깨짐 → 조각 물리 =================
 // 조각 모양: 정육면체를 씨앗 점들의 보로노이 칸으로 잘라 둔다(시작 때 PATTERNS개). 셰이더 금 선도 같은 씨앗으로 그려서 금 = 조각 경계.
@@ -760,7 +844,7 @@ function contactFrag(F,r,n,I){const V=F.V,W=F.W,vc=vadd(V,vcross(W,r)),vn=vdot(v
   if(lt>1e-5){const t=vt.map(x=>x/lt),rt=vcross(r,t),kt=1+vdot(rt,rt)/I,jt=Math.min(lt/kt,TUNE44.MU*j);for(let i=0;i<3;i++){V[i]-=t[i]*jt;W[i]-=rt[i]*jt/I;}}
   return -vn;}
 function updFrags(gdt){if(!FR.length||gdt<=0)return;const T=TUNE44,dt=gdt/T.SUB;frSnd=T.SND_MAX;
-  const PL=[[[0,1,0],0],[[1,0,0],wallOff[0]],[[0,0,1],wallOff[1]]];   // 바닥, 옆벽, 뒷벽
+  const PL=[[[0,1,0],0],[[1,0,0],wallOff[0]],[[-1,0,0],wallOff[0]],[[0,0,1],wallOff[1]],[[0,0,-1],wallOff[1]]];   // v4.12: 바닥 + 받침 네 가장자리(보이지 않는 경계)
   for(const F of FR){if(F.sleep>T.SLEEP_S)continue;const I=0.4*F.f.r*F.f.r+0.004;
     for(let s=0;s<T.SUB;s++){F.V[1]-=T.G*dt;for(let i=0;i<3;i++)F.X[i]+=F.V[i]*dt;
       const wl=vlen(F.W);if(wl>1e-5)F.Q=qnorm(qMul(qAxis(F.W.map(x=>x/wl),wl*dt),F.Q));
@@ -848,21 +932,34 @@ function render3D(now,rdt){if(!USE3D)return;
   if(n){mx/=n;mz/=n;mu/=n;}const k=n?Math.pow(mu,1.6):1;
   let tc=[mx*0.5*(1-k),0,mz*0.55*(1-k)],te=[tc[0],D*(TUNE3.CAM_ROLL[0]+(TUNE3.CAM_END[0]-TUNE3.CAM_ROLL[0])*k),tc[2]+D*(TUNE3.CAM_ROLL[1]+(TUNE3.CAM_END[1]-TUNE3.CAM_ROLL[1])*k)];
   let f=Math.min(1,rdt*5*wscale);
-  if(seq3&&seq3.held&&n){tc=[mx*0.7,0.9,mz-0.3+TUNE45.RUN_CAM_DZ];te=[mx*0.7,D*TUNE4.HOLD_CAM[0],mz+D*TUNE4.HOLD_CAM[1]+TUNE45.RUN_CAM_DZ];f=Math.min(1,rdt*TUNE4.HOLD_CAM[2]);}  // v4.4: 공중 주사위를 화면 위·가운데로 (화살표는 아래)
+  if(seq3&&seq3.held&&n){const dz=seq3.camDZ||0,zm=seq3.camZm||1;tc=[mx*0.7,0.9,mz-0.3+TUNE45.RUN_CAM_DZ+dz];te=[mx*0.7,D*TUNE4.HOLD_CAM[0],mz+D*TUNE4.HOLD_CAM[1]+TUNE45.RUN_CAM_DZ+dz];te=te.map((v,i)=>tc[i]+(v-tc[i])*zm);f=Math.min(1,rdt*TUNE4.HOLD_CAM[2]);}  // v4.4: 공중 주사위를 화면 위·가운데로 (화살표는 아래)
   for(let i=0;i<3;i++){camE[i]+=(te[i]-camE[i])*f;camC[i]+=(tc[i]-camC[i])*f;}
   if(seq3&&!seq3.camInit&&n){seq3.camInit=1;camE=te.slice();camC=tc.slice();}   // v4.4: 주사위가 나온 첫 프레임에 맞춤
   VP=m4mul(m4persp(TUNE3.FOV*Math.PI/180,asp,0.5,80,TUNE3.LENS_SHIFT),m4look(camE,camC));
+  // v4.12: 공중 줄 전체를 [위 버튼 아래 ~ 방향 패널 위] 안에 맞춤 — 아래 끝이 패널을 넘으면 그 프레임에 바로 카메라를 밀고(위로 올림), 위가 모자라면 살짝 물러남(작게)
+  if(seq3&&seq3.held&&n&&typeof G!=='undefined'&&G.seq&&phase!=='run'){seq3.camDZ=Math.max(0,(seq3.camDZ||0)-rdt*2.5);seq3.camZm=Math.max(1,(seq3.camZm||1)-rdt*0.5);}   // 방향 입력이 끝나면 원래 구도로 천천히 복귀
+  if(seq3&&seq3.held&&n&&typeof G!=='undefined'&&G.seq&&phase==='run'){const lim=arrowPanel(G.seq.length).y-TUNE53.SAFE_GAP,top=TUNE53.TOP_SAFE;
+    const ext=()=>{let lo=-1e9,hi=1e9;for(const d of dice3){if(gtime<d.t0||d.chain)continue;const p=proj(d.pos),q=proj([d.pos[0],d.pos[1],d.pos[2]+0.75]),r=Math.abs(q[1]-p[1])*0.4+30;lo=Math.max(lo,q[1]+Math.abs(q[1]-p[1])*0.4,p[1]+30);hi=Math.min(hi,p[1]-r-8);}return[lo,hi];};
+    const apply=(s,zk)=>{seq3.camDZ=(seq3.camDZ||0)+s;seq3.camZm=(seq3.camZm||1)*zk;camE[2]+=s;camC[2]+=s;for(let i=0;i<3;i++)camE[i]=camC[i]+(camE[i]-camC[i])*zk;
+      VP=m4mul(m4persp(TUNE3.FOV*Math.PI/180,asp,0.5,80,TUNE3.LENS_SHIFT),m4look(camE,camC));};
+    for(let it=0;it<5;it++){const [lo,hi]=ext();if(lo<-1e8)break;const over=lo-lim,room=hi-top;
+      if(over<=0){if(over<-60&&room<-0){apply(0,1.02);continue;}if(over<-60)seq3.camDZ=Math.max(0,(seq3.camDZ||0)-rdt*0.6);break;}
+      if(room-over<0&&(seq3.camZm||1)<TUNE53.ZOOM_MAX)apply(0,1.04);   // 위아래 모두 모자라면 물러남
+      else apply(Math.min(3,over*0.012+0.02),1);}}
   gl.viewport(0,0,glc.width,glc.height);gl.clearColor(0,0,0,0);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.disable(gl.CULL_FACE);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
-  // v4.3 던전 돌바닥 (횃불·환경광·요철)
-  const T4=TUNE43,tp=torchPos();torchFl=0.82+0.1*Math.sin(now/83)+0.06*Math.sin(now/31+1.7)+0.04*Math.sin(now/13+0.4);
-  wallOff=[-(halfW+T4.WALL_K[0]),-Math.max(halfH+2.2,D*T4.WALL_K[1])];
+  // v4.12 디오라마: 바깥 나무 테이블 → 받침 윗면(깊이 기록: 받침 뒤 단면이 윗면을 뚫고 보이지 않게)
+  const T4=TUNE43,T53=TUNE53,tp=T53.KEY;torchFl=1;
+  wallOff=[-T53.BASE[0],-T53.BASE[1]];
+  gl.enable(gl.DEPTH_TEST);gl.depthMask(true);
   const F=G3.floor;gl.useProgram(F.p);gl.bindBuffer(gl.ARRAY_BUFFER,G3.qb);gl.enableVertexAttribArray(F.aQ);gl.vertexAttribPointer(F.aQ,2,gl.FLOAT,false,0,0);
-  gl.uniformMatrix4fv(F.u.uVP,false,VP);gl.uniform1f(F.u.uS,40);gl.uniform1f(F.u.uA,tray);gl.uniform2f(F.u.uC,-0.6,-0.4);
-  gl.uniform1f(F.u.uFl,torchFl);gl.uniform1f(F.u.uTile,T4.FLOOR_TILE);gl.uniform1f(F.u.uBump,T4.FLOOR_BUMP);gl.uniform1f(F.u.uTI,T4.TORCH_I);gl.uniform1f(F.u.uAmb,T4.AMB);gl.uniform1f(F.u.uSpot,T4.SPOT);
-  gl.uniform1f(F.u.uTexel,1/T4.TEX);gl.uniform2f(F.u.uWall,wallOff[0],wallOff[1]);gl.uniform3f(F.u.uTorch,tp[0],tp[1],tp[2]);
+  gl.uniformMatrix4fv(F.u.uVP,false,VP);gl.uniform1f(F.u.uA,tray);gl.uniform1f(F.u.uTile,T4.FLOOR_TILE);gl.uniform1f(F.u.uBump,T4.FLOOR_BUMP);gl.uniform1f(F.u.uSpot,T4.SPOT);
+  gl.uniform1f(F.u.uTexel,1/T4.TEX);gl.uniform2f(F.u.uBase,T53.BASE[0],T53.BASE[1]);gl.uniform1f(F.u.uDepth,T53.DEPTH);gl.uniform3f(F.u.uKey,tp[0],tp[1],tp[2]);
   gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,G3.htex);gl.uniform1i(F.u.uHt,1);
-  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,G3.tex);gl.uniform1i(F.u.uTex,0);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,G3.tex);gl.uniform1i(F.u.uTex,0);
+  gl.uniform1f(F.u.uMode,1);gl.uniform3f(F.u.uS,40,40,-T53.DEPTH);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);   // 테이블
+  gl.uniform1f(F.u.uMode,0);gl.uniform3f(F.u.uS,T53.BASE[0]-T53.BEVEL,T53.BASE[1]-T53.BEVEL,0);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);   // 받침 윗면
+  gl.disable(gl.DEPTH_TEST);gl.depthMask(false);
   // 그림자 + 치명 바닥 빛
   const B=G3.blob;gl.useProgram(B.p);gl.vertexAttribPointer(B.aQ,2,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(B.aQ);gl.uniformMatrix4fv(B.u.uVP,false,VP);
   const live=dice3.filter(d=>gtime>=d.t0);
@@ -880,8 +977,8 @@ function render3D(now,rdt){if(!USE3D)return;
   const E=G3.env;gl.useProgram(E.p);gl.bindBuffer(gl.ARRAY_BUFFER,G3.evb);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,G3.eib);
   gl.enableVertexAttribArray(E.aP);gl.vertexAttribPointer(E.aP,3,gl.FLOAT,false,44,0);gl.enableVertexAttribArray(E.aN);gl.vertexAttribPointer(E.aN,3,gl.FLOAT,false,44,12);
   gl.enableVertexAttribArray(E.aC);gl.vertexAttribPointer(E.aC,3,gl.FLOAT,false,44,24);gl.enableVertexAttribArray(E.aF);gl.vertexAttribPointer(E.aF,2,gl.FLOAT,false,44,36);
-  gl.uniformMatrix4fv(E.u.uVP,false,VP);gl.uniform1f(E.u.uA,tray);gl.uniform1f(E.u.uFl,torchFl);gl.uniform1f(E.u.uTI,T4.TORCH_I);gl.uniform1f(E.u.uAmb,T4.AMB);gl.uniform1f(E.u.uSpot,T4.SPOT);
-  gl.uniform2f(E.u.uC,-0.6,-0.4);gl.uniform2f(E.u.uWall,wallOff[0],wallOff[1]);gl.uniform3f(E.u.uTorch,tp[0],tp[1],tp[2]);gl.uniform1i(E.u.uTex,0);
+  gl.uniformMatrix4fv(E.u.uVP,false,VP);gl.uniform1f(E.u.uA,tray);gl.uniform1f(E.u.uSpot,T4.SPOT);
+  gl.uniform2f(E.u.uWall,0,0);gl.uniform3f(E.u.uKey,tp[0],tp[1],tp[2]);gl.uniform1i(E.u.uTex,0);
   gl.drawElements(gl.TRIANGLES,G3.en,gl.UNSIGNED_SHORT,0);
   gl.disableVertexAttribArray(E.aC);gl.disableVertexAttribArray(E.aF);gl.disableVertexAttribArray(E.aP);gl.disableVertexAttribArray(E.aN);
   // 주사위
@@ -889,7 +986,7 @@ function render3D(now,rdt){if(!USE3D)return;
   const P=G3.die;gl.useProgram(P.p);gl.bindBuffer(gl.ARRAY_BUFFER,G3.vb);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,G3.ib);
   gl.enableVertexAttribArray(P.aP);gl.vertexAttribPointer(P.aP,3,gl.FLOAT,false,24,0);gl.enableVertexAttribArray(P.aN);gl.vertexAttribPointer(P.aN,3,gl.FLOAT,false,24,12);
   gl.uniformMatrix4fv(P.u.uVP,false,VP);gl.uniform3f(P.u.uCam,camE[0],camE[1],camE[2]);gl.uniform1f(P.u.uTime,now/1000);
-  gl.uniform3f(P.u.uTorch,tp[0],tp[1],tp[2]);gl.uniform1f(P.u.uFl,torchFl);gl.uniform1f(P.u.uTD,T4.TORCH_DIE);
+  gl.uniform3f(P.u.uTorch,tp[0],tp[1],tp[2]);gl.uniform1f(P.u.uFl,1);gl.uniform1f(P.u.uTD,TUNE53.KEY_I);   // v4.12: 횃불 대신 따뜻한 키 라이트
   const T5=TUNE44,uSd=P.u['uSd[0]'];gl.uniform2f(P.u.uDF,T5.DIM_FAIL[0],T5.DIM_FAIL[1]);
   const crkU=(c,co,pat,w)=>{gl.uniform1f(P.u.uCrk,c);if(c>0){gl.uniform3f(P.u.uCO,co[0],co[1],co[2]);gl.uniform1f(P.u.uNs,pat.ns);gl.uniform3fv(uSd,pat.sd);gl.uniform1f(P.u.uCW,w);}};
   for(const d of live){if(d.broken||d.sc===0)continue;const fl=d.flashT!==undefined?Math.max(0,1-(gtime-d.flashT)/T4.FLASH_MS):0,up=Math.max(d.glow||0,fl*fl*1.6*T4.GLOW*(d.keep?T4.KEEP:1));
@@ -933,9 +1030,8 @@ function render3D(now,rdt){if(!USE3D)return;
     gl.disableVertexAttribArray(S.aP);}
   // v4.3 효과 입자 + 공중 먼지 + 횃불 (점 한 번에 그리기)
   {let n=0;const A=PTA,put=(x,y,z,r,g,b,a,s)=>{const o=n*8;A[o]=x;A[o+1]=y;A[o+2]=z;A[o+3]=r;A[o+4]=g;A[o+5]=b;A[o+6]=a;A[o+7]=s;n++;};
-    for(const m of MOTES){const dx=m.x-tp[0],dy=m.y-tp[1],dz=m.z-tp[2],lt=0.25+2.2*torchFl/(1+0.12*(dx*dx+dy*dy+dz*dz)),tw=0.6+0.4*Math.sin(m.ph*3);
-      put(m.x,m.y,m.z,1.0*lt,0.8*lt,0.6*lt,0.4*tray*tw,-m.s);}
-    put(tp[0],tp[1]+0.12,tp[2],1.0,0.55,0.2,0.55*tray*torchFl,-1.6);put(tp[0],tp[1]+0.08,tp[2],1.0,0.8,0.5,0.8*tray*torchFl,-0.45);
+    for(let i=0;i<MOTES.length&&i<TUNE53.MOTES;i++){const m=MOTES[i],tw=0.6+0.4*Math.sin(m.ph*3),lt=0.55+0.45*Math.max(0,1-Math.hypot(m.x,m.z)/4);   // v4.12: 키 라이트 속 먼지
+      put(m.x,m.y,m.z,1.0*lt,0.86*lt,0.66*lt,0.32*tray*tw,-m.s);}
     for(const p of P3){if(p.sty)continue;if(n>=T4.MAX_PT+T4.MOTES+6)break;const u=p.t/p.max,a=p.a*(p.add?(1-u):(u<0.15?u/0.15:(1-u)/0.85))*tray;put(p.x,p.y,p.z,p.c[0],p.c[1],p.c[2],a,(p.s0+(p.s1-p.s0)*u)*(p.add?-1:1));}
     const n0=n;   // v4.10: 카툰 불꽃 조각은 뒤에 모아 별도 셰이더로
     for(const p of P3){if(!p.sty)continue;if(n>=T4.MAX_PT+T4.MOTES+6)break;const u=p.t/p.max;put(p.x,p.y,p.z,p.seed,u,p.lv,p.sty-1,(p.s0+(p.s1-p.s0)*u)*(tray>0.5?1:tray*2));}
@@ -1031,7 +1127,7 @@ const DIFF={
 };
 // 숨은 판정 데이터: 오팔 · 굴절 광선 → 갈고리 짐승 (v1~v3와 같음)
 const ATK={atk:4,acc:5,pow:5,pen:1,cd:2}, TGT={agi:3,tou:3,hp:8,sv:6,inv:0,df:2};
-const OPT={P:50,mode:1,penalty:0,direct:0,stage2:1,shatter:1};
+const OPT={P:50,mode:1,penalty:0,direct:0,stage2:1,shatter:1,timing:TUNE53.TIMING};
 // v4.6 방어 모드: 갈고리 짐승(갈고리: 타수 3·위력 4·관통 0, 명중 4, 치명 피해 1) → 오팔(민첩 4·견고함 2·체력 8·장갑 6+·보호막 4+·방어 수 2)
 // 근거: LBCombatGameMode.cpp 110·123·127행, characters/opal.md 144·146행, combat-resolution-v2.md 144~158행
 let SIDE='atk',FOE=null;
@@ -1190,9 +1286,14 @@ window.__games=[];
 function setWord(t,cls,popCls){word.className='txt '+(cls||'');word.textContent=t;if(popCls){void word.offsetWidth;word.classList.add(popCls);}}
 function setHint(t){hint.textContent=t;}
 const DIRS={U:-90,R:0,D:90,L:180};
-function arrowSize(n){return Math.min(54,(W-32)/n-8);}
+// v4.12: 손가락 기준 칸 크기(최소 44) · 지금 칸 1.3배. 칸이 안 들어가면 간격부터 줄임
+function arrowSize(n){const T=TUNE53,av=W-16-2*T.PANEL_PAD;return clamp((av-(n-1)*T.ARROW_GAP)/n,Math.min(T.ARROW_MIN,(av-(n-1)*2)/n),T.ARROW_MAX);}
+function arrowGap(n){const T=TUNE53,s=arrowSize(n),av=W-16-2*T.PANEL_PAD;return clamp((av-n*s)/Math.max(1,n-1),2,T.ARROW_GAP+s*(T.CUR_SCALE-1)/2);}
 function airCenter(){if(USE3D&&VP&&dice3.length){let sx=0,sy=0;for(const d of dice3){const p=proj(d.pos);sx+=p[0];sy+=p[1];}return[sx/dice3.length,sy/dice3.length];}return[cx,cy];}
-function arrowXY(i,n){const s=arrowSize(n),g=8,tw=n*s+(n-1)*g;return[cx-tw/2+s/2+i*(s+g),USE3D?H-TUNE45.ARROW_BOTTOM:cy];}
+function arrowXY(i,n){const s=arrowSize(n),g=arrowGap(n),tw=n*s+(n-1)*g;return[cx-tw/2+s/2+i*(s+g),USE3D?H-TUNE45.ARROW_BOTTOM:cy];}
+// v4.12 방향 패널 영역(화면 px): 공중 주사위는 이 위쪽에만 머문다
+function arrowPanel(n){const T=TUNE53,s=arrowSize(n),g=arrowGap(n),tw=n*s+(n-1)*g,y=arrowXY(0,n)[1],top=y-s*T.CUR_SCALE/2-T.PANEL_PAD+2,barY=y+s*0.5+12;
+  return{x:cx-tw/2-T.PANEL_PAD,y:top,w:tw+2*T.PANEL_PAD,h:barY+T.BAR_H+T.PANEL_PAD-top,barY,s,g};}
 
 // ---------- 1단계: 탭하면 바로 던지고, 주사위가 공중에 있는 동안 방향 입력 ----------
 function startRun(now){const D=DIFF[diff],A=DIFF_ARROWS[diff];   // v4.7: 화살표 수·제한 시간은 DIFF_ARROWS, 원 판정 폭은 DIFF
@@ -1244,7 +1345,7 @@ function throwDice(now){
 function endStage1(){const now=performance.now();
   G.mods=modsOf('normal',0);   // v4.7: 방향 입력은 치명 기준을 바꾸지 않음(보상은 원에서)
   phase='air';pad.classList.add('off');cam.zoomT=1;tension=0;
-  if(G.s2on&&G.ringN>0){setHint(G.direct?'원이 안쪽 고리와 겹칠 때 그 주사위를 탭':'원이 안쪽 고리와 겹칠 때 아무 곳이나 탭 (키: Space)');startS2(now);}
+  if(G.s2on&&G.ringN>0){const sil=OPT.timing&&USE3D,w=sil?'실루엣이 주사위와 딱 겹칠 때':'원이 안쪽 고리와 겹칠 때';setHint(G.direct?w+' 그 주사위를 탭':w+' 아무 곳이나 탭 (키: Space)');startS2(now);}
   else{setHint('');doRelease(now);}}
 // ---------- 2단계: 착지 전 주사위별 타이밍 원 (v4.7: 원은 줄 앞쪽 ringN개 주사위만) ----------
 function startS2(now){const D=G.D;
@@ -1386,22 +1487,58 @@ function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx
 const PIPS={1:[[0,0]],2:[[-1,-1],[1,1]],3:[[-1,-1],[0,0],[1,1]],4:[[-1,-1],[1,-1],[-1,1],[1,1]],5:[[-1,-1],[1,-1],[0,0],[-1,1],[1,1]],6:[[-1,-1],[1,-1],[-1,0],[1,0],[-1,1],[1,1]]};
 function arrowPath(s,deg){ctx.save();ctx.rotate(deg*Math.PI/180);const a=s*0.30,b=a*0.40;ctx.beginPath();
   ctx.moveTo(a,0);ctx.lineTo(a*0.05,-a*0.95);ctx.lineTo(a*0.05,-b);ctx.lineTo(-a,-b);ctx.lineTo(-a,b);ctx.lineTo(a*0.05,b);ctx.lineTo(a*0.05,a*0.95);ctx.closePath();ctx.restore();}
-function drawStage1(now,al){const n=G.seq.length,s=arrowSize(n),stun=now<G.stunUntil;ctx.globalAlpha=al;
-  for(let i=0;i<n;i++){let [x,y]=arrowXY(i,n);if(stun)x+=Math.sin(now/16+i*1.7)*5*(G.stunUntil-now)/TUNE4.STUN_MS;
+function drawStage1(now,al){const n=G.seq.length,T=TUNE53,PN=arrowPanel(n),s=PN.s,stun=now<G.stunUntil;ctx.globalAlpha=al;
+  // v4.12: 불투명에 가까운 어두운 패널 → 바닥·주사위와 분리
+  ctx.save();ctx.shadowColor='rgba(0,0,0,.6)';ctx.shadowBlur=16;rr(PN.x,PN.y,PN.w,PN.h,18);ctx.fillStyle=`rgba(9,11,17,${T.PANEL_A})`;ctx.fill();ctx.restore();
+  rr(PN.x,PN.y,PN.w,PN.h,18);ctx.lineWidth=1.5;ctx.strokeStyle='rgba(255,255,255,.16)';ctx.stroke();
+  let curI=-1;
+  const cell=(i)=>{let [x,y]=arrowXY(i,n);if(stun)x+=Math.sin(now/16+i*1.7)*5*(G.stunUntil-now)/TUNE4.STUN_MS;
     const done=i<G.k,cur=i===G.k&&phase==='run',bad=!!G.miss[i]&&(done||phase!=='run');let sc=1;if(done&&G.litAt[i]){const k=clamp((now-G.litAt[i])/170,0,1);sc=1+0.3*(1-k)*(1-k);}
+    if(cur)sc=T.CUR_SCALE*(1+0.035*Math.sin(now/120));
     if(bad&&G.litAt[i])x+=Math.sin((now-G.litAt[i])/14)*6*Math.max(0,1-(now-G.litAt[i])/200);   // v4.7: 틀린 화살표만 짧게 흔들림
     ctx.save();ctx.translate(x,y);ctx.scale(sc,sc);
-    rr(-s/2,-s/2,s,s,s*0.2);ctx.fillStyle=bad?'rgba(255,80,80,.14)':done?'rgba(255,211,74,.16)':'rgba(255,255,255,.05)';ctx.fill();
-    ctx.lineWidth=cur?2:1;ctx.strokeStyle=bad?'rgba(255,93,93,.75)':done?'rgba(255,211,74,.85)':cur?`rgba(255,255,255,${0.55+0.35*Math.sin(now/110)})`:'rgba(255,255,255,.14)';ctx.stroke();
-    if(bad){const a=s*0.24;ctx.strokeStyle='#ff5d5d';ctx.lineWidth=Math.max(2.5,s*0.09);ctx.lineCap='round';ctx.beginPath();ctx.moveTo(-a,-a);ctx.lineTo(a,a);ctx.moveTo(a,-a);ctx.lineTo(-a,a);ctx.stroke();ctx.restore();continue;}   // 빨간 ✕
-    if(done){ctx.shadowColor='#ffb02e';ctx.shadowBlur=14;}
-    arrowPath(s,DIRS[G.seq[i]]);ctx.fillStyle=done?'#ffd34a':cur?'#ffffff':'rgba(207,214,228,.42)';ctx.fill();ctx.shadowBlur=0;ctx.restore();}
-  const frac=phase==='run'?clamp(1-(now-G.t0)/G.T,0,1):G.remFrac,bw=Math.min(W*0.78,320),bh=8,bx=cx-bw/2,by=arrowXY(0,n)[1]+s/2+24;
-  rr(bx,by,bw,bh,4);ctx.fillStyle='rgba(255,255,255,.08)';ctx.fill();
-  if(frac>0.004){rr(bx,by,Math.max(bh,bw*frac),bh,4);ctx.fillStyle=frac>0.2?'#7fd4ff':'#ff5d5d';ctx.fill();}
-  ctx.font='600 12px system-ui,sans-serif';ctx.textAlign='center';ctx.fillStyle=G.hits/n<TUNE49.GATE&&phase!=='run'?'rgba(255,128,128,.85)':'rgba(220,230,245,.8)';ctx.fillText(G.hits+'/'+n,cx,by+28);   // v4.7: 맞힌 수
+    rr(-s/2,-s/2,s,s,s*0.22);
+    if(bad){ctx.fillStyle='rgba(120,16,20,.95)';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#ff5d5d';ctx.stroke();
+      const a=s*0.24;ctx.strokeStyle='#ff6b6b';ctx.lineWidth=Math.max(4,s*0.12);ctx.lineCap='round';ctx.beginPath();ctx.moveTo(-a,-a);ctx.lineTo(a,a);ctx.moveTo(a,-a);ctx.lineTo(-a,a);ctx.stroke();ctx.restore();return;}   // 빨간 ✕
+    if(done){ctx.fillStyle='#ffc93a';ctx.shadowColor='#ffb02e';ctx.shadowBlur=14;ctx.fill();ctx.shadowBlur=0;ctx.lineWidth=2;ctx.strokeStyle='#fff1b0';ctx.stroke();
+      arrowPath(s,DIRS[G.seq[i]]);ctx.fillStyle='#3a2400';ctx.fill();ctx.restore();return;}   // 맞힌 칸: 금 채움 + 어두운 화살표
+    if(cur){ctx.fillStyle='rgba(255,255,255,.14)';ctx.shadowColor='rgba(255,255,255,.85)';ctx.shadowBlur=18;ctx.fill();ctx.shadowBlur=0;ctx.lineWidth=3;ctx.strokeStyle='#ffffff';ctx.stroke();
+      arrowPath(s,DIRS[G.seq[i]]);ctx.lineJoin='round';ctx.lineWidth=5;ctx.strokeStyle='#05070c';ctx.stroke();ctx.fillStyle='#ffffff';ctx.fill();ctx.restore();return;}   // 지금 칸: 크게 + 흰색 + 굵은 외곽선
+    ctx.fillStyle='rgba(255,255,255,.08)';ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle='rgba(255,255,255,.38)';ctx.stroke();
+    arrowPath(s,DIRS[G.seq[i]]);ctx.fillStyle=`rgba(255,255,255,${T.NEXT_A})`;ctx.fill();ctx.restore();};
+  for(let i=0;i<n;i++){if(i===G.k&&phase==='run'){curI=i;continue;}cell(i);}
+  if(curI>=0)cell(curI);   // 지금 칸은 맨 위에
+  // 시간 막대 (두껍고 밝게, 남은 시간이 적으면 빨갛게 깜빡) + 맞힌 수
+  const frac=phase==='run'?clamp(1-(now-G.t0)/G.T,0,1):G.remFrac,bw=PN.w-2*T.PANEL_PAD-46,bh=T.BAR_H,bx=PN.x+T.PANEL_PAD,by=PN.barY;
+  rr(bx,by,bw,bh,bh/2);ctx.fillStyle='rgba(255,255,255,.16)';ctx.fill();
+  if(frac>0.004){const low=frac<=T.BAR_LOW,bl=low&&phase==='run'?0.55+0.45*Math.sin(now/55):1;rr(bx,by,Math.max(bh,bw*frac),bh,bh/2);
+    ctx.globalAlpha=al*bl;ctx.fillStyle=low?'#ff4d4d':'#8fe0ff';ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;ctx.globalAlpha=al;}
+  ctx.font='800 16px system-ui,sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
+  ctx.fillStyle=G.hits/n<TUNE49.GATE&&phase!=='run'?'#ff8080':'#ffffff';ctx.fillText(G.hits+'/'+n,PN.x+PN.w-T.PANEL_PAD,by+bh/2+1);ctx.textBaseline='alphabetic';   // v4.7: 맞힌 수
   ctx.globalAlpha=1;}
+// v4.12 실루엣 타이밍: 주사위 8 꼭짓점을 화면에 투영한 볼록 껍질(현재 회전을 따라감) → 크게 겹쳐 있다가 주사위 크기로 줄어듦
+function dieHull(d){const P=[],h=0.52;for(const a of[-h,h])for(const b of[-h,h])for(const c of[-h,h]){const r=qRot(d.q,[a,b,c]);P.push(proj([d.pos[0]+r[0],d.pos[1]+r[1],d.pos[2]+r[2]]));}
+  P.sort((p,q)=>p[0]-q[0]||p[1]-q[1]);const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]),lo=[],up=[];
+  for(const p of P){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop();lo.push(p);}
+  for(let i=P.length-1;i>=0;i--){const p=P[i];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0)up.pop();up.push(p);}
+  lo.pop();up.pop();return lo.concat(up);}
+function hullPath(hl,x,y,sc){ctx.beginPath();hl.forEach((p,i)=>{const X=x+(p[0]-x)*sc,Y=y+(p[1]-y)*sc;i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});ctx.closePath();}
+function drawSil(now,first){const T=TUNE53;ctx.lineJoin='round';
+  const list=S2.rings.filter(r=>now>=r.appear&&dice3[r.i]).sort((a,b)=>(a===first)-(b===first));   // 지금 차례는 맨 위
+  for(const r of list){const d=dice3[r.i],hl=dieHull(d),c=proj(d.pos),x=c[0],y=c[1];
+    if(r.res){const k=(now-r.at)/320;if(k>=1)continue;const col=r.res==='P'?'255,211,74':r.res==='S'?'127,212,255':'150,150,160';   // 판정 순간: 실루엣이 밝게 퍼지며 사라짐
+      ctx.globalCompositeOperation='lighter';ctx.strokeStyle=`rgba(${col},${1-k})`;ctx.lineWidth=6*(1-k)+1;hullPath(hl,x,y,1+0.4*k);ctx.stroke();ctx.globalCompositeOperation='source-over';continue;}
+    const cur=G.direct||r===first,k=(r.close-now)/S2.D.close,sc=1+(T.SIL_START_MUL-1)*Math.max(0,k),app=clamp((now-r.appear)/150,0,1);
+    const pb=(T.SIL_START_MUL-1)*S2.D.perf/S2.D.close;   // 완벽 구간 = 원 모드와 같은 시간 폭 → 같은 비율만큼의 띠
+    ctx.globalAlpha=app*(cur?1:T.SIL_DIM);
+    hullPath(hl,x,y,1+pb);ctx.fillStyle='rgba(255,211,74,.16)';ctx.fill();   // 완벽 띠(주사위 둘레)
+    hullPath(hl,x,y,1);ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=2;ctx.stroke();   // 목표 = 주사위 윤곽
+    const near=Math.abs(r.close-now)<=S2.D.good,perf=Math.abs(r.close-now)<=S2.D.perf;ctx.globalCompositeOperation='lighter';
+    if(perf&&cur){ctx.shadowColor='#fff3c0';ctx.shadowBlur=18;}
+    ctx.strokeStyle=perf?'rgba(255,245,200,1)':near?'rgba(255,211,74,1)':'rgba(127,212,255,.95)';ctx.lineWidth=cur?(perf?6:4):2;hullPath(hl,x,y,sc);ctx.stroke();ctx.shadowBlur=0;
+    ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;}}
 function drawRings(now){const first=S2.doneAt?null:openRings(now)[0];
+  if(OPT.timing&&USE3D&&VP){drawSil(now,first);return;}   // v4.12: 설정 "타이밍 표시"가 실루엣이면
   for(const r of S2.rings){if(now<r.appear)continue;const [x,y,r0]=ringGeom(r.i);
     if(r.res){const k=(now-r.at)/300;if(k>=1)continue;const col=r.res==='P'?'255,211,74':r.res==='S'?'127,212,255':'150,150,160';
       ctx.globalCompositeOperation='lighter';ctx.strokeStyle=`rgba(${col},${1-k})`;ctx.lineWidth=5*(1-k)+1;ctx.beginPath();ctx.arc(x,y,r0*(1+0.45*k),0,PI2);ctx.stroke();ctx.globalCompositeOperation='source-over';continue;}
