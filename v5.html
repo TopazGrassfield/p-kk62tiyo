@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#07080c">
-<title>LB v5.2 · 전투 한 턴 · 폰 + 우르르 타격</title>
+<title>LB v5.4 · 전투 한 턴 · 콘솔 UI</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#07080c;color:#fff;overscroll-behavior:none;touch-action:none;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
@@ -74,6 +74,87 @@ body #hint{color:#f2f4f8;text-shadow:0 0 2px #000,0 0 4px #000,0 1px 6px rgba(0,
 #sum{position:fixed;left:8px;right:8px;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;font-size:13px;color:#aab1c0;pointer-events:none;font-variant-numeric:tabular-nums}
 #sum b{color:#5cf2a6}#sum i{font-style:normal;color:#ffd34a}
 #hint{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 14px);text-align:center;font-size:12px;color:#8a92a3;pointer-events:none;transition:opacity .3s}
+/* ================= v5.4 콘솔(홀로그램) UI — 색·글꼴 토큰은 UIDiorama 023 css/menu.css :root(8~20행) 그대로 ================= */
+:root{--frame-rgb:112,206,255;--holo:#dcf1ff;--holo-rgb:220,241,255;
+  --enamel-hi:#f6f8f9;--enamel:#e6eaec;--enamel-lo:#cdd3d6;--edge-hi:#a3abb0;--edge-lo:#586166;
+  --ink:#14181b;--ink-2:#56606a;--ink-3:#7c858d;
+  --accent:#49c3ff;--acc-rgb:73,195,255;--accent-ink:#03121c;            /* 023 .theme-k1 */
+  --plate:rgba(4,12,20,.80);   /* 판 바탕: 023은 .18~.52지만, 밝은 회색 격자 바닥 위에서 푸른 선이 묻혀 더 어둡게 */
+  --d:4px;                     /* 흰 블록 버튼 두께(눌림 이동 거리) */
+  --f-sans:"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
+  --f-num:Bahnschrift,"DIN Alternate","SF Pro Display",system-ui,sans-serif;
+  --hex:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)}   /* 023 js/menu.js:219 납작 육각(위아래 평평) */
+body{font-family:var(--f-sans)}
+/* 홀로그램 판: 어두운 유리 + 가는 발광 선 + 모서리 브래킷 + 옅은 주사선 (023 menu.css:72-84 #glass, 376-379 .hud-btn, 427 .w-br) */
+.holo{--bc:rgba(var(--frame-rgb),.95);--bl:12px;color:var(--holo);border:0!important;border-radius:4px!important;
+  background:
+    linear-gradient(var(--bc),var(--bc)) left top/var(--bl) 2px no-repeat,linear-gradient(var(--bc),var(--bc)) left top/2px var(--bl) no-repeat,
+    linear-gradient(var(--bc),var(--bc)) right top/var(--bl) 2px no-repeat,linear-gradient(var(--bc),var(--bc)) right top/2px var(--bl) no-repeat,
+    linear-gradient(var(--bc),var(--bc)) left bottom/var(--bl) 2px no-repeat,linear-gradient(var(--bc),var(--bc)) left bottom/2px var(--bl) no-repeat,
+    linear-gradient(var(--bc),var(--bc)) right bottom/var(--bl) 2px no-repeat,linear-gradient(var(--bc),var(--bc)) right bottom/2px var(--bl) no-repeat,
+    repeating-linear-gradient(0deg,rgba(var(--holo-rgb),.035) 0 1px,transparent 1px 3px),
+    linear-gradient(162deg,rgba(var(--frame-rgb),.10),rgba(var(--frame-rgb),.02) 45%,rgba(var(--frame-rgb),.06)),
+    var(--plate)!important;
+  box-shadow:0 0 0 1px rgba(var(--frame-rgb),.42),0 0 14px rgba(var(--frame-rgb),.22),inset 0 0 18px rgba(var(--frame-rgb),.10)!important}
+/* 흰 블록 물리 버튼: 법랑 면 + 아래 두께 + 받침 발광 선, 누르면 두께만큼 내려감 (023 menu.css:11-12 · 320-327 · 363-373) */
+:is(#ui,#panel,#pad) button,#again{position:relative;min-height:44px;padding:0 12px;margin-bottom:var(--d);border:0;border-radius:8px;
+  font:700 14px/1 var(--f-sans);letter-spacing:1px;color:var(--ink);touch-action:manipulation;
+  background:radial-gradient(110% 120% at 30% 0%,rgba(255,255,255,.65),rgba(255,255,255,0) 55%),linear-gradient(180deg,var(--enamel-hi),var(--enamel) 60%,var(--enamel-lo));
+  box-shadow:0 var(--d) 0 var(--edge-lo),0 calc(var(--d) + 2px) 3px rgba(0,0,0,.45),0 0 0 1px rgba(var(--frame-rgb),.42),0 0 10px rgba(var(--frame-rgb),.35);
+  transform:translateY(0);transition:transform .26s cubic-bezier(.3,1.7,.5,1),box-shadow .2s,filter .2s}
+:is(#ui,#panel,#pad) button.on{color:var(--ink);background:radial-gradient(110% 120% at 30% 0%,rgba(255,255,255,.65),rgba(255,255,255,0) 55%),linear-gradient(180deg,var(--enamel-hi),var(--enamel) 60%,var(--enamel-lo));
+  transform:translateY(calc(var(--d) - 1px));box-shadow:0 1px 0 var(--edge-lo),0 0 0 1.5px rgba(var(--acc-rgb),1),0 0 12px rgba(var(--acc-rgb),.75)}   /* 걸쇠에 걸려 눌린 채 + 푸른 받침 */
+:is(#ui,#panel) button.on::after{content:'';position:absolute;left:50%;bottom:5px;width:18px;height:3px;margin-left:-9px;border-radius:2px;background:var(--accent);box-shadow:0 0 8px 2px rgba(var(--acc-rgb),.8)}   /* LED (023 .sq .k-led) */
+:is(#ui,#panel,#pad) button.press,#again.press{transform:translateY(var(--d));box-shadow:0 0 0 var(--edge-lo),0 1px 1px rgba(0,0,0,.45),0 0 0 2px rgba(var(--acc-rgb),1),0 0 12px rgba(var(--acc-rgb),.8);filter:brightness(.82) contrast(1.06);transition-duration:.07s}
+#ui{gap:6px}#ui button{min-width:56px;height:44px;font-size:14px}
+/* 육각 버튼: 소리 · 설정 (023 js/menu.js:227 rhex 모양을 clip-path로) */
+#mute,#gear{width:52px;height:48px;padding:0;border:0;border-radius:0;background:none;box-shadow:none;touch-action:manipulation;filter:drop-shadow(0 0 3px rgba(var(--frame-rgb),.75))}
+#gear{left:calc(env(safe-area-inset-left) + 68px)}
+#mute::before,#gear::before{content:'';position:absolute;left:0;right:0;top:var(--d);bottom:0;clip-path:var(--hex);background:linear-gradient(180deg,var(--edge-hi),var(--edge-lo) 70%)}
+.hf{position:absolute;left:0;right:0;top:0;bottom:var(--d);clip-path:var(--hex);display:grid;place-items:center;color:var(--ink);
+  background:radial-gradient(110% 120% at 30% 0%,rgba(255,255,255,.65),rgba(255,255,255,0) 55%),linear-gradient(180deg,var(--enamel-hi),var(--enamel) 60%,var(--enamel-lo));
+  transition:transform .26s cubic-bezier(.3,1.7,.5,1),filter .2s}
+.hf svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#mute.press .hf,#gear.press .hf{transform:translateY(var(--d));filter:brightness(.82);transition-duration:.07s}
+#gear.on .hf{transform:translateY(3px)}#gear.on{filter:drop-shadow(0 0 2px rgba(var(--acc-rgb),1)) drop-shadow(0 0 6px rgba(var(--acc-rgb),.8))}
+/* 턴 안내 띠: 위아래 발광 선 배너 + 가운데에서 펼쳐지는 스윕 (023 menu.css:87 .sweep · 164 .panel-sweep · 166 steps 등장) */
+#band{top:calc(env(safe-area-inset-top) + 66px);padding:6px 28px;border:0;border-radius:2px;font:800 15px/1.2 var(--f-sans);letter-spacing:5px;color:var(--holo);
+  --bc:rgba(var(--frame-rgb),.95);--bl:8px;
+  background:
+    linear-gradient(var(--bc),var(--bc)) left top/2px var(--bl) no-repeat,linear-gradient(var(--bc),var(--bc)) right top/2px var(--bl) no-repeat,
+    linear-gradient(var(--bc),var(--bc)) left bottom/2px var(--bl) no-repeat,linear-gradient(var(--bc),var(--bc)) right bottom/2px var(--bl) no-repeat,
+    linear-gradient(90deg,var(--bc),transparent 18%,transparent 82%,var(--bc)) top/100% 1px no-repeat,
+    linear-gradient(90deg,var(--bc),transparent 18%,transparent 82%,var(--bc)) bottom/100% 1px no-repeat,
+    repeating-linear-gradient(0deg,rgba(var(--holo-rgb),.04) 0 1px,transparent 1px 3px),
+    linear-gradient(90deg,rgba(4,12,20,.55),rgba(4,12,20,.84) 20% 80%,rgba(4,12,20,.55));
+  box-shadow:0 0 12px rgba(var(--frame-rgb),.25);text-shadow:0 0 9px rgba(var(--frame-rgb),.5),0 1px 2px rgba(0,0,0,.85)}
+#band.show{animation:band54 .3s steps(8,end) forwards}
+@keyframes band54{0%{opacity:1;transform:translateX(-50%);clip-path:inset(0 50% 0 50%);filter:brightness(2.4)}100%{opacity:1;transform:translateX(-50%);clip-path:inset(0 0 0 0);filter:brightness(1)}}
+#band.me{--bc:rgba(126,224,168,.95);color:#dcffea;border:0}#band.foe{--bc:rgba(255,106,85,.95);color:#ffe2da;border:0}
+#band.dim{--bc:rgba(var(--holo-rgb),.5);color:#c9d6e2}#band.shield{--bc:rgba(var(--frame-rgb),.95);color:var(--holo);border:0}#band.tap{--bc:rgba(var(--frame-rgb),.75);color:var(--holo)}
+#band.ko{font-size:30px;padding:10px 36px;letter-spacing:8px;--bl:12px}
+#band.win{--bc:#ffd34a;color:#ffe9a6;border:0;text-shadow:0 0 18px #ffb02e,0 1px 2px rgba(0,0,0,.85)}#band.lose{--bc:#ff5d6c;color:#ffc2c2;border:0;text-shadow:0 0 16px #ff3b4e,0 1px 2px rgba(0,0,0,.85)}
+/* 결과 글자(실패 · 완벽 투척 · 통과): 콘솔 톤 발광 글자 + 뒤에 옅은 판 띠 */
+#word{font-family:var(--f-sans);letter-spacing:4px}
+#word.big{letter-spacing:8px;padding:12px 0 10px;border-top:1px solid;border-bottom:1px solid;border-image:linear-gradient(90deg,transparent,currentColor 30%,currentColor 70%,transparent) 1;
+  background:linear-gradient(90deg,transparent,rgba(4,12,20,.62) 25%,rgba(4,12,20,.62) 75%,transparent);text-shadow:0 0 16px currentColor,0 0 2px rgba(0,0,0,.9)}
+#word.small{color:var(--holo);font-size:16px;letter-spacing:2px;text-shadow:0 0 8px rgba(var(--frame-rgb),.6),0 1px 3px #000}
+#info small{font-size:12px}
+/* 다시: 큰 흰 블록 + 철컥 */
+#again{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 140px);transform:translateX(-50%);min-height:52px;padding:0 34px;font-size:18px;letter-spacing:4px}
+#again::before{content:'↻';margin-right:8px;font-weight:800}
+#again.press{transform:translateX(-50%) translateY(var(--d))}
+/* 설정 패널: 홀로그램 판 (블러 없음 — 아이폰 부하) */
+#panel{top:calc(env(safe-area-inset-top) + 66px);width:min(330px,calc(100vw - 20px));padding:14px 14px 12px;font-size:12px;z-index:9;--plate:rgba(4,12,20,.93)}   /* 설정 글자 대비 때문에 판을 더 진하게 */
+#panel .lab{color:rgba(var(--holo-rgb),.82);letter-spacing:1px;margin-bottom:6px}#panel .lab b{color:var(--accent);font-family:var(--f-num);font-size:14px}
+#panel .row{margin-top:8px}#panel .seg{gap:6px}#panel .seg button{height:44px;padding:0 4px;font-size:13px;letter-spacing:0}
+#panel input[type=range]{accent-color:var(--accent)}#panel .note{font-size:12px;color:rgba(var(--holo-rgb),.6)}
+/* 방향 버튼 줄: 홀로그램 판 위 흰 블록 */
+#pad{padding:8px 12px 6px;gap:10px;--bl:10px}
+#pad button{width:64px;height:52px;font:800 26px/1 var(--f-sans);color:var(--ink);padding:0}
+#pad button.hit{animation:padHit54 .18s ease-out}
+@keyframes padHit54{0%{transform:translateY(var(--d));filter:brightness(1.1);box-shadow:0 0 0 var(--edge-lo),0 0 0 2px #ffd34a,0 0 14px #ffb02e}100%{transform:translateY(0)}}
+body #hint{color:var(--holo);text-shadow:0 0 6px rgba(var(--frame-rgb),.5),0 0 2px #000,0 1px 4px #000;letter-spacing:.5px}
 </style>
 </head>
 <body>
@@ -86,9 +167,9 @@ body #hint{color:#f2f4f8;text-shadow:0 0 2px #000,0 0 4px #000,0 1px 6px rgba(0,
   <div class="txt" id="info"></div>
   <div class="txt" id="dmg"></div>
 </div>
-<button id="mute" aria-label="소리">🔊</button>
-<button id="gear">⚙ 설정</button>
-<div id="panel" hidden>
+<button id="mute" class="hexb" aria-label="소리"><i class="hf"></i></button>
+<button id="gear" class="hexb" aria-label="설정"><i class="hf"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/><circle cx="12" cy="12" r="6.4"/></svg></i></button>
+<div id="panel" class="holo" hidden>
   <div class="row"><div class="lab"><span>완벽 시 향상 확률 P</span><b id="pv">50%</b></div>
     <input id="pP" type="range" min="0" max="100" step="5" value="50">
     <div class="note" id="pnote">성공 = P/2 · 전원 완벽 = P+20%p</div></div>
@@ -109,7 +190,7 @@ body #hint{color:#f2f4f8;text-shadow:0 0 2px #000,0 0 4px #000,0 1px 6px rgba(0,
 <div id="side"><button data-s="atk" class="on">공격</button><button data-s="def">방어</button></div>
 <div id="foe"></div>
 <div id="ui"><button data-d="easy">쉬움</button><button data-d="normal" class="on">보통</button><button data-d="hard">어려움</button></div>
-<div id="pad"><button data-k="L">←</button><button data-k="U">↑</button><button data-k="D">↓</button><button data-k="R">→</button></div>
+<div id="pad" class="holo"><button data-k="L">←</button><button data-k="U">↑</button><button data-k="D">↓</button><button data-k="R">→</button></div>
 <div id="sum"></div>
 <div id="hint"></div>
 
@@ -303,6 +384,18 @@ const TUNE53={
 function ringCount(rate,n){return rate<TUNE49.GATE?0:Math.floor(rate*n+1e-9);}
 let FR=[],FRP=[],frSnd=0;window.__v44={brk:[],frags:0};
 let P3=[],SH3=[],MOTES=[],PTA=null;
+// ---------- v5.3 단계별 카메라 (요청서 21) — 주사위가 나온 뒤(seq3)의 카메라는 전부 여기서 ----------
+// az: 대치 카메라 정면에서 옆으로 돈 각도(도, +는 오른쪽에서 봄) · el: 내려다보는 각도(도) · fill: 주사위 줄(주사위 몸체 끝~끝, DIE_M 포함)이 화면 가로에서 차지하는 비율 · lag: 따라가는 빠르기(1/초, 작을수록 늦게)
+const CAM53={ON:1,
+  FOV:42,                                   // 화각(도) — 대치 카메라와 같은 렌즈
+  THROW: {az:30,el:36,fill:0.86,lag:5},     // 던짐: 탭 직후 상승 RISE_MS 동안 (살짝 늦게 따라 올라감)
+  RUN:   {az:30,el:36,fill:0.86,lag:6},     // 방향 입력
+  TIMING:{az:30,el:38,fill:0.76,lag:4},     // 타이밍(원/실루엣): 방향 입력과 같은 방위(회전 없음), 대치 카메라처럼 비스듬히 + 둘레 여유 · az를 줄이면 주사위가 화면에서 겹쳐 보임(14 → 간격 1.05배, 30 → 1.36배)
+  LAND:  {az:8,el:46,fill:0.74,lag:4},      // 착지·연쇄 → 다음 상태에서 TUNE60.VIEW(대치)로 CAM_MS에 걸쳐 섞임
+  RISE_MS:260, IN_MS:420,                   // 던짐 단계 길이 · 대치 → 주사위 카메라 전환 시간(반대 방향은 TUNE60.CAM_MS)
+  BLEND:6,                                  // 단계 사이 각도·거리가 바뀌는 빠르기(1/초, 6 ≈ 0.5초)
+  TOP_PX:92, PANEL_GAP:18, FREE_BOT:0.84,   // 프레이밍 영역: 위 버튼 아래 ~ 방향 패널 위(입력 중) / 화면 84%(그 밖)
+  DIE_M:0.75, MIN_D:4.5, MAX_D:40};         // 주사위 반지름 여유(월드) · 거리 하한·상한
 let USE3D=false,gl=null,glc=null,G3=null,tray=0,trayT=0,gtime=0,dice3=[],seq3=null,VP=null,camE=[0,12,6],camC=[0,0,0];
 window.__v3={log:[],frames:[]};
 
@@ -930,6 +1023,27 @@ function drawUpFx(x,y,r0,ch,now,col){if(ch<=0)return;const r=r0*(1.9-0.9*ch),a=0
   ctx.globalCompositeOperation='source-over';}
 function roll3D(res,isCrit){launch3D(res.dice.filter(d=>!d.chain).map(d=>d.v),false);release3D(res,isCrit);}
 // v4.4: 공중에 머무는 궤적 지점. 방향 입력 중에는 시간 막대와 함께 RUN_U 구간을 천천히 내려오고, 원 단계에서는 v4처럼 HOLD_U까지
+// v5.3: 단계 판정 → 각도·채움 비율을 부드럽게 바꾸고, 공중 주사위 무리의 화면상 상자를 프레이밍 영역 가운데에 맞춤
+function cam53(rdt,asp){const C=CAM53,now=performance.now(),dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  if(seq3.camT0==null)seq3.camT0=now;
+  const st=!seq3.held?'LAND':(now-seq3.camT0<C.RISE_MS?'THROW':(phase==='run'?'RUN':'TIMING')),P=C[st];seq3.camSt=st;
+  const b=1-Math.exp(-C.BLEND*(rdt||0)),inRun=phase==='run'&&typeof G!=='undefined'&&G&&G.seq;
+  const botT=inRun?arrowPanel(G.seq.length).y-C.PANEL_GAP:H*C.FREE_BOT;
+  let cp=seq3.camP;if(!cp)cp=seq3.camP={az:P.az,el:P.el,fill:P.fill,lag:P.lag,bot:botT};
+  for(const k of ['az','el','fill','lag'])cp[k]+=(P[k]-cp[k])*b;cp.bot+=(botT-cp.bot)*b;
+  const ps=[];for(const d of dice3){if(st==='THROW'){ps.push(pose(d,holdCapU(d)).p);if(gtime>=d.t0)ps.push(d.pos);}else if(gtime>=d.t0)ps.push(d.pos);}   // 던짐: 지금 위치 + 머물 곳(아직 안 나온 주사위 포함)을 함께 잡아, 날아오르는 궤적 전체가 화면 안
+  const az=cp.az*Math.PI/180,el=cp.el*Math.PI/180,dir=[Math.sin(az)*Math.cos(el),Math.sin(el),Math.cos(az)*Math.cos(el)];
+  const rt=vnorm(vcross([0,1,0],dir)),up=vcross(dir,rt);
+  let c=[0,0,0];for(const p of ps)for(let i=0;i<3;i++)c[i]+=p[i]/ps.length;
+  let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;for(const p of ps){const v=vsub(p,c),x=dot(v,rt),y=dot(v,up);x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);}
+  c=c.map((v,i)=>v+rt[i]*(x0+x1)/2+up[i]*(y0+y1)/2);   // 상자 가운데
+  const ty=Math.tan(C.FOV*Math.PI/360),tx=ty*asp,top=C.TOP_PX,bot=Math.max(top+120,cp.bot),hN=(bot-top)/H;
+  let Dd=C.MIN_D;for(const p of ps){const v=vsub(p,c),dx=Math.abs(dot(v,rt))+C.DIE_M,dy=Math.abs(dot(v,up))+C.DIE_M,dz=dot(v,dir);
+    Dd=Math.max(Dd,dz+dx/(tx*cp.fill),dz+dy/(ty*hN));}
+  Dd=Math.min(Dd,C.MAX_D);
+  const ndcY=1-2*((top+bot)/2)/H,yo=(ndcY+TUNE3.LENS_SHIFT)*Dd*ty;   // 상자 가운데가 영역 가운데 높이에 오도록 목표점을 아래로
+  const tgt=c.map((v,i)=>v-up[i]*yo),eye=tgt.map((v,i)=>v+dir[i]*Dd);
+  return[tgt,eye,Math.min(1,1-Math.exp(-cp.lag*(rdt||0)))];}
 function holdCapU(d){const h=Math.max(0.02,TUNE4.HOLD_U-d.idx*(TUNE48.LINE?TUNE48.HOLD_STEP_U:TUNE4.HOLD_STEP_U)),R=TUNE45.RUN_U;
   if(G&&(phase==='run'||phase==='end')){const p=phase==='run'?clamp((performance.now()-G.t0)/G.T,0,1):1-G.remFrac;return Math.min(h,R[0]+(R[1]-R[0])*p);}
   return h;}
@@ -995,14 +1109,17 @@ function render3D(now,rdt){if(!USE3D)return;
   if(n){mx/=n;mz/=n;mu/=n;}const k=n?Math.pow(mu,1.6):1;
   let tc=[mx*0.5*(1-k),0,mz*0.55*(1-k)],te=[tc[0],D*(TUNE3.CAM_ROLL[0]+(TUNE3.CAM_END[0]-TUNE3.CAM_ROLL[0])*k),tc[2]+D*(TUNE3.CAM_ROLL[1]+(TUNE3.CAM_END[1]-TUNE3.CAM_ROLL[1])*k)];
   let f=Math.min(1,rdt*5*wscale);
-  if(seq3&&seq3.held&&n){const dz=seq3.camDZ||0,zm=seq3.camZm||1;tc=[mx*0.7,0.9,mz-0.3+TUNE45.RUN_CAM_DZ+dz];te=[mx*0.7,D*TUNE4.HOLD_CAM[0],mz+D*TUNE4.HOLD_CAM[1]+TUNE45.RUN_CAM_DZ+dz];te=te.map((v,i)=>tc[i]+(v-tc[i])*zm);f=Math.min(1,rdt*TUNE4.HOLD_CAM[2]);}  // v4.4: 공중 주사위를 화면 위·가운데로 (화살표는 아래)
+  if(CAM53.ON&&seq3&&n){const r=cam53(rdt,asp);tc=r[0];te=r[1];f=r[2];}
+  else if(seq3&&seq3.held&&n){const dz=seq3.camDZ||0,zm=seq3.camZm||1;tc=[mx*0.7,0.9,mz-0.3+TUNE45.RUN_CAM_DZ+dz];te=[mx*0.7,D*TUNE4.HOLD_CAM[0],mz+D*TUNE4.HOLD_CAM[1]+TUNE45.RUN_CAM_DZ+dz];te=te.map((v,i)=>tc[i]+(v-tc[i])*zm);f=Math.min(1,rdt*TUNE4.HOLD_CAM[2]);}  // v4.4: 공중 주사위를 화면 위·가운데로 (화살표는 아래)
   for(let i=0;i<3;i++){camE[i]+=(te[i]-camE[i])*f;camC[i]+=(tc[i]-camC[i])*f;}
   if(seq3&&!seq3.camInit&&n){seq3.camInit=1;camE=te.slice();camC=tc.slice();}   // v4.4: 주사위가 나온 첫 프레임에 맞춤
-  {const bk=window.btCamK?btCamK():0,V=bk>0?btView():null,E=bk>0?camE.map((v,i)=>v+(V[0][i]-v)*bk):camE,C=bk>0?camC.map((v,i)=>v+(V[1][i]-v)*bk):camC;window.__camU=E;   // v5: 대치 카메라로 섞기
-  VP=m4mul(m4persp(TUNE3.FOV*Math.PI/180,asp,0.5,80,TUNE3.LENS_SHIFT),m4look(E,C));}
+  {const bk=window.btCamK?btCamK():0,V=bk>0?btView():null;let E=bk>0?camE.map((v,i)=>v+(V[0][i]-v)*bk):camE,C=bk>0?camC.map((v,i)=>v+(V[1][i]-v)*bk):camC;
+   if(CAM53.ON&&bk>0&&bk<1){const o1=vsub(camE,camC),o2=vsub(V[0],V[1]),l1=Math.hypot(...o1),l2=Math.hypot(...o2),n=vnorm(o1.map((v,i)=>v/l1+(o2[i]/l2-v/l1)*bk)),L=l1+(l2-l1)*bk;E=C.map((v,i)=>v+n[i]*L);}   // v5.3: 방향·거리를 따로 섞어 전환 중 각도가 튀지 않게
+   window.__camU=E;   // v5: 대치 카메라로 섞기
+  VP=m4mul(m4persp((CAM53.ON?CAM53.FOV:TUNE3.FOV)*Math.PI/180,asp,0.5,80,TUNE3.LENS_SHIFT),m4look(E,C));}
   // v4.12: 공중 줄 전체를 [위 버튼 아래 ~ 방향 패널 위] 안에 맞춤 — 아래 끝이 패널을 넘으면 그 프레임에 바로 카메라를 밀고(위로 올림), 위가 모자라면 살짝 물러남(작게)
-  if(seq3&&seq3.held&&n&&typeof G!=='undefined'&&G.seq&&phase!=='run'){seq3.camDZ=Math.max(0,(seq3.camDZ||0)-rdt*2.5);seq3.camZm=Math.max(1,(seq3.camZm||1)-rdt*0.5);}   // 방향 입력이 끝나면 원래 구도로 천천히 복귀
-  if(seq3&&seq3.held&&n&&typeof G!=='undefined'&&G.seq&&phase==='run'){const lim=arrowPanel(G.seq.length).y-TUNE53.SAFE_GAP,top=TUNE53.TOP_SAFE;
+  if(!CAM53.ON&&seq3&&seq3.held&&n&&typeof G!=='undefined'&&G.seq&&phase!=='run'){seq3.camDZ=Math.max(0,(seq3.camDZ||0)-rdt*2.5);seq3.camZm=Math.max(1,(seq3.camZm||1)-rdt*0.5);}   // 방향 입력이 끝나면 원래 구도로 천천히 복귀
+  if(!CAM53.ON&&seq3&&seq3.held&&n&&typeof G!=='undefined'&&G.seq&&phase==='run'){const lim=arrowPanel(G.seq.length).y-TUNE53.SAFE_GAP,top=TUNE53.TOP_SAFE;
     const ext=()=>{let lo=-1e9,hi=1e9;for(const d of dice3){if(gtime<d.t0||d.chain)continue;const p=proj(d.pos),q=proj([d.pos[0],d.pos[1],d.pos[2]+0.75]),r=Math.abs(q[1]-p[1])*0.4+30;lo=Math.max(lo,q[1]+Math.abs(q[1]-p[1])*0.4,p[1]+30);hi=Math.min(hi,p[1]-r-8);}return[lo,hi];};
     const apply=(s,zk)=>{seq3.camDZ=(seq3.camDZ||0)+s;seq3.camZm=(seq3.camZm||1)*zk;camE[2]+=s;camC[2]+=s;for(let i=0;i<3;i++)camE[i]=camC[i]+(camE[i]-camC[i])*zk;
       VP=m4mul(m4persp(TUNE3.FOV*Math.PI/180,asp,0.5,80,TUNE3.LENS_SHIFT),m4look(camE,camC));};
@@ -1534,7 +1651,9 @@ function drawToken(x,y,b,sc,now){const s=TUNE51.TOKEN*sc;if(s<1)return;ctx.save(
 function drawAmmo(now){if(!AMMO.items.length)return;const T=TUNE50,T1=TUNE51;
   const ease=k=>1-Math.pow(1-k,3);
   if(now>=AMMO.t0-120){const n=AMMO.items.length,rows=ammoRows(),per=Math.ceil(n/rows),a=clamp((now-AMMO.t0+120)/200,0,1),w=T1.TOKEN+T1.TOKEN_GAP,[,y0]=ammoSlot(0);   // 칸 바탕(성공한 것만 들어갈 길이)
-    ctx.globalAlpha=a*0.55;ctx.fillStyle='rgba(8,10,16,.85)';rr(cx-per*w/2-6,y0-w/2-4,per*w+12,rows*w+8,10);ctx.fill();ctx.globalAlpha=a*0.35;ctx.strokeStyle='#5b6578';ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;}
+    ctx.globalAlpha=a;holoPlate(cx-per*w/2-8,y0-w/2-6,per*w+16,rows*w+12,{bl:8,glow:6});   // v5.4: 홀로그램 슬롯 줄 + 브래킷
+    ctx.strokeStyle=`rgba(${UI54.FRAME},.28)`;ctx.lineWidth=1;for(let r=0;r<rows;r++)for(let c=0;c<per;c++){const sx=cx-per*w/2+c*w+2,sy=y0-w/2+r*w+2;ctx.strokeRect(sx+0.5,sy+0.5,w-5,w-5);}   // 빈 슬롯 칸
+    ctx.globalAlpha=1;}
   AMMO.items.forEach((b,j)=>{const t=now-b.at;if(t<0)return;
     if(t<T.AMMO_SHRINK_MS){const k=t/T.AMMO_SHRINK_MS;if(USE3D){const d=dice3[b.i];if(d)d.sc=1-ease(k);}else{const d=dice[b.i];if(d)d.sc=1-ease(k);}   // 주사위가 빛나며 수축
       if(!b.fx){b.fx=1;SFX.morph();}return;}
@@ -1555,37 +1674,69 @@ function endAll(){phase='done';endT=performance.now();setHint('');if(window.btOn
 // ================= 그리기 =================
 function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
   ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();}
+// ================= v5.4 콘솔(홀로그램) UI 상수 — 색은 023 menu.css :root 토큰과 같음 =================
+const UI54={
+  FRAME:'112,206,255', HOLO:'220,241,255', ACC:'73,195,255',   // --frame-rgb · --holo-rgb · --acc-rgb
+  PLATE:'rgba(4,12,20,.80)',          // 판 바탕 (회색 바닥 위 가독성 때문에 023보다 어둡게)
+  BRK:12,                             // 모서리 브래킷 길이(px)
+  SCAN:1,                             // 판 주사선 (0 = 끔)
+  EDGE:0.09,                          // 흰 블록 화살표 칸 두께(칸 크기 배수)
+  ENAMEL:['#f6f8f9','#e6eaec','#cdd3d6'], EDGE_C:['#a3abb0','#586166'], INK:'#14181b',
+  GOLD:['#ffe58a','#ffc93a','#e2a11c'],   // 맞힌 칸 (색 유지)
+  BAR_W:4,                            // 시간 게이지 발광 선 두께(px)
+  CLACK_VOL:0.55,                     // 버튼 철컥 음량(이 파일 MASTER 기준)
+  FNUM:'Bahnschrift,"DIN Alternate","SF Pro Display",system-ui,sans-serif'};
+const scanPats=new Map();function scanPattern(){if(scanPats.has(ctx))return scanPats.get(ctx);const c=document.createElement('canvas');c.width=4;c.height=3;const g=c.getContext('2d');
+  g.fillStyle=`rgba(${UI54.HOLO},.05)`;g.fillRect(0,0,4,1);const p=ctx.createPattern(c,'repeat');scanPats.set(ctx,p);return p;}
+function brackets(x,y,w,h,bl,col,lw){ctx.lineWidth=lw||2;ctx.strokeStyle=col;ctx.beginPath();
+  for(const [px,py,sx,sy] of [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]]){ctx.moveTo(px+sx*bl,py);ctx.lineTo(px,py);ctx.lineTo(px,py+sy*bl);}ctx.stroke();}
+// 홀로그램 판: 어두운 유리 + 푸른 기울기 + 주사선 + 가는 발광 테두리 + 모서리 브래킷 (023 menu.css:72-84 · 376-379 · 427)
+function holoPlate(x,y,w,h,o){o=o||{};const F=UI54.FRAME,r=o.r!=null?o.r:4;ctx.save();
+  rr(x,y,w,h,r);ctx.fillStyle=o.fill||UI54.PLATE;ctx.fill();
+  const g=ctx.createLinearGradient(x,y,x+w*0.35,y+h);g.addColorStop(0,`rgba(${F},.11)`);g.addColorStop(0.5,`rgba(${F},.02)`);g.addColorStop(1,`rgba(${F},.06)`);ctx.fillStyle=g;ctx.fill();
+  if(UI54.SCAN&&!o.noScan){ctx.fillStyle=scanPattern();ctx.fill();}
+  ctx.lineWidth=1;ctx.strokeStyle=`rgba(${F},.45)`;ctx.shadowColor=`rgba(${F},.7)`;ctx.shadowBlur=o.glow!=null?o.glow:8;ctx.stroke();ctx.shadowBlur=0;
+  brackets(x,y,w,h,o.bl||UI54.BRK,o.bc||`rgba(${F},.95)`,o.blw||2);ctx.restore();}
+// 흰 블록 칸(중심 원점): 아래 두께 + 법랑 면 + 받침 발광 선. sink = 면이 내려간 정도(0~1), face = 면 색 3단
+function blockCell(s,o){const d=s*UI54.EDGE,sk=(o.sink||0)*d,r=s*0.2,fc=o.face||UI54.ENAMEL;
+  rr(-s/2-3,-s/2-3,s+6,s+d+6,r+3);ctx.lineWidth=o.sockW||1.2;ctx.strokeStyle=o.sock||`rgba(${UI54.FRAME},.5)`;if(o.glow){ctx.shadowColor=o.glow;ctx.shadowBlur=o.glowB||14;}ctx.stroke();ctx.shadowBlur=0;
+  if(sk<d){rr(-s/2,-s/2+d,s,s,r);const e=ctx.createLinearGradient(0,s/2,0,s/2+d);e.addColorStop(0,UI54.EDGE_C[0]);e.addColorStop(1,UI54.EDGE_C[1]);ctx.fillStyle=e;ctx.fill();}
+  ctx.translate(0,sk);rr(-s/2,-s/2,s,s,r);const g=ctx.createLinearGradient(0,-s/2,0,s/2);g.addColorStop(0,fc[0]);g.addColorStop(0.6,fc[1]);g.addColorStop(1,fc[2]);ctx.fillStyle=g;ctx.fill();
+  const hl=ctx.createRadialGradient(-s*0.2,-s*0.5,0,-s*0.2,-s*0.5,s*0.75);hl.addColorStop(0,'rgba(255,255,255,.6)');hl.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=hl;ctx.fill();}
 const PIPS={1:[[0,0]],2:[[-1,-1],[1,1]],3:[[-1,-1],[0,0],[1,1]],4:[[-1,-1],[1,-1],[-1,1],[1,1]],5:[[-1,-1],[1,-1],[0,0],[-1,1],[1,1]],6:[[-1,-1],[1,-1],[-1,0],[1,0],[-1,1],[1,1]]};
 function arrowPath(s,deg){ctx.save();ctx.rotate(deg*Math.PI/180);const a=s*0.30,b=a*0.40;ctx.beginPath();
   ctx.moveTo(a,0);ctx.lineTo(a*0.05,-a*0.95);ctx.lineTo(a*0.05,-b);ctx.lineTo(-a,-b);ctx.lineTo(-a,b);ctx.lineTo(a*0.05,b);ctx.lineTo(a*0.05,a*0.95);ctx.closePath();ctx.restore();}
 function drawStage1(now,al){const n=G.seq.length,T=TUNE53,PN=arrowPanel(n),s=PN.s,stun=now<G.stunUntil;ctx.globalAlpha=al;
-  // v4.12: 불투명에 가까운 어두운 패널 → 바닥·주사위와 분리
-  ctx.save();ctx.shadowColor='rgba(0,0,0,.6)';ctx.shadowBlur=16;rr(PN.x,PN.y,PN.w,PN.h,18);ctx.fillStyle=`rgba(9,11,17,${T.PANEL_A})`;ctx.fill();ctx.restore();
-  rr(PN.x,PN.y,PN.w,PN.h,18);ctx.lineWidth=1.5;ctx.strokeStyle='rgba(255,255,255,.16)';ctx.stroke();
+  // v5.4: 홀로그램 판(어두운 유리 + 발광 선 + 모서리 브래킷). 판 뒤에 옅은 그림자를 깔아 회색 바닥 위에서 선이 묻히지 않게
+  ctx.save();ctx.shadowColor='rgba(0,0,0,.55)';ctx.shadowBlur=14;rr(PN.x,PN.y,PN.w,PN.h,4);ctx.fillStyle=`rgba(4,12,20,${T.PANEL_A})`;ctx.fill();ctx.restore();
+  holoPlate(PN.x,PN.y,PN.w,PN.h,{fill:'rgba(0,0,0,0)'});
   let curI=-1;
   const cell=(i)=>{let [x,y]=arrowXY(i,n);if(stun)x+=Math.sin(now/16+i*1.7)*5*(G.stunUntil-now)/TUNE4.STUN_MS;
     const done=i<G.k,cur=i===G.k&&phase==='run',bad=!!G.miss[i]&&(done||phase!=='run');let sc=1;if(done&&G.litAt[i]){const k=clamp((now-G.litAt[i])/170,0,1);sc=1+0.3*(1-k)*(1-k);}
     if(cur)sc=T.CUR_SCALE*(1+0.035*Math.sin(now/120));
     if(bad&&G.litAt[i])x+=Math.sin((now-G.litAt[i])/14)*6*Math.max(0,1-(now-G.litAt[i])/200);   // v4.7: 틀린 화살표만 짧게 흔들림
     ctx.save();ctx.translate(x,y);ctx.scale(sc,sc);
-    rr(-s/2,-s/2,s,s,s*0.22);
-    if(bad){ctx.fillStyle='rgba(120,16,20,.95)';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#ff5d5d';ctx.stroke();
-      const a=s*0.24;ctx.strokeStyle='#ff6b6b';ctx.lineWidth=Math.max(4,s*0.12);ctx.lineCap='round';ctx.beginPath();ctx.moveTo(-a,-a);ctx.lineTo(a,a);ctx.moveTo(a,-a);ctx.lineTo(-a,a);ctx.stroke();ctx.restore();return;}   // 빨간 ✕
-    if(done){ctx.fillStyle='#ffc93a';ctx.shadowColor='#ffb02e';ctx.shadowBlur=14;ctx.fill();ctx.shadowBlur=0;ctx.lineWidth=2;ctx.strokeStyle='#fff1b0';ctx.stroke();
-      arrowPath(s,DIRS[G.seq[i]]);ctx.fillStyle='#3a2400';ctx.fill();ctx.restore();return;}   // 맞힌 칸: 금 채움 + 어두운 화살표
-    if(cur){ctx.fillStyle='rgba(255,255,255,.14)';ctx.shadowColor='rgba(255,255,255,.85)';ctx.shadowBlur=18;ctx.fill();ctx.shadowBlur=0;ctx.lineWidth=3;ctx.strokeStyle='#ffffff';ctx.stroke();
-      arrowPath(s,DIRS[G.seq[i]]);ctx.lineJoin='round';ctx.lineWidth=5;ctx.strokeStyle='#05070c';ctx.stroke();ctx.fillStyle='#ffffff';ctx.fill();ctx.restore();return;}   // 지금 칸: 크게 + 흰색 + 굵은 외곽선
-    ctx.fillStyle='rgba(255,255,255,.08)';ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle='rgba(255,255,255,.38)';ctx.stroke();
-    arrowPath(s,DIRS[G.seq[i]]);ctx.fillStyle=`rgba(255,255,255,${T.NEXT_A})`;ctx.fill();ctx.restore();};
+    // v5.4: 칸 = 흰 블록 물리 버튼(아래 두께 + 법랑 면). 맞힘 = 금 블록이 눌려 들어감, 틀림 = 빨간 블록 + ✕, 지금 칸 = 푸른 발광 받침 맥동
+    if(bad){blockCell(s,{sink:1,face:['#c8323a','#9c1c24','#741219'],sock:'#ff5d5d',sockW:2,glow:'rgba(255,80,80,.8)',glowB:10});
+      const a=s*0.24;ctx.strokeStyle='#ffe0e0';ctx.lineWidth=Math.max(4,s*0.12);ctx.lineCap='round';ctx.beginPath();ctx.moveTo(-a,-a);ctx.lineTo(a,a);ctx.moveTo(a,-a);ctx.lineTo(-a,a);ctx.stroke();ctx.restore();return;}   // 빨간 ✕
+    if(done){blockCell(s,{sink:1,face:UI54.GOLD,sock:'#fff1b0',sockW:2,glow:'#ffb02e',glowB:14});
+      arrowPath(s,DIRS[G.seq[i]]);ctx.fillStyle='#3a2400';ctx.fill();ctx.restore();return;}   // 맞힌 칸: 금 블록 + 어두운 화살표
+    if(cur){const pu=0.5+0.5*Math.sin(now/120);blockCell(s,{sock:`rgba(${UI54.ACC},1)`,sockW:2.5,glow:`rgba(${UI54.ACC},${0.7+0.3*pu})`,glowB:14+8*pu});
+      arrowPath(s,DIRS[G.seq[i]]);ctx.fillStyle=UI54.INK;ctx.fill();ctx.restore();return;}   // 지금 칸: 크게 + 흰 블록 + 푸른 발광 맥동
+    ctx.globalAlpha*=0.55+0.45*T.NEXT_A;blockCell(s,{face:['#c9d0d4','#b6bec3','#9ea7ad']});
+    arrowPath(s,DIRS[G.seq[i]]);ctx.fillStyle='rgba(20,24,27,.78)';ctx.fill();ctx.restore();};   // 다음 칸: 한 톤 낮은 흰 블록
   for(let i=0;i<n;i++){if(i===G.k&&phase==='run'){curI=i;continue;}cell(i);}
   if(curI>=0)cell(curI);   // 지금 칸은 맨 위에
-  // 시간 막대 (두껍고 밝게, 남은 시간이 적으면 빨갛게 깜빡) + 맞힌 수
-  const frac=phase==='run'?clamp(1-(now-G.t0)/G.T,0,1):G.remFrac,bw=PN.w-2*T.PANEL_PAD-46,bh=T.BAR_H,bx=PN.x+T.PANEL_PAD,by=PN.barY;
-  rr(bx,by,bw,bh,bh/2);ctx.fillStyle='rgba(255,255,255,.16)';ctx.fill();
-  if(frac>0.004){const low=frac<=T.BAR_LOW,bl=low&&phase==='run'?0.55+0.45*Math.sin(now/55):1;rr(bx,by,Math.max(bh,bw*frac),bh,bh/2);
-    ctx.globalAlpha=al*bl;ctx.fillStyle=low?'#ff4d4d':'#8fe0ff';ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;ctx.globalAlpha=al;}
-  ctx.font='800 16px system-ui,sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
-  ctx.fillStyle=G.hits/n<TUNE49.GATE&&phase!=='run'?'#ff8080':'#ffffff';ctx.fillText(G.hits+'/'+n,PN.x+PN.w-T.PANEL_PAD,by+bh/2+1);ctx.textBaseline='alphabetic';   // v4.7: 맞힌 수
+  // v5.4 시간 게이지: 가는 홈 + 눈금 + 발광 선 (남은 시간이 적으면 빨갛게 깜빡) + 맞힌 수
+  const frac=phase==='run'?clamp(1-(now-G.t0)/G.T,0,1):G.remFrac,bw=PN.w-2*T.PANEL_PAD-46,bh=T.BAR_H,bx=PN.x+T.PANEL_PAD,by=PN.barY,lw=UI54.BAR_W,my=by+bh/2;
+  ctx.fillStyle=`rgba(${UI54.FRAME},.10)`;ctx.fillRect(bx,my-bh/2,bw,bh);ctx.strokeStyle=`rgba(${UI54.FRAME},.35)`;ctx.lineWidth=1;ctx.strokeRect(bx+0.5,my-bh/2+0.5,bw-1,bh-1);
+  ctx.fillStyle=`rgba(${UI54.FRAME},.45)`;for(let j=1;j<10;j++){const tx=Math.round(bx+bw*j/10);ctx.fillRect(tx,my+bh/2+2,1,j===5?5:3);}   // 눈금 (023 원형 링 눈금의 직선판)
+  if(frac>0.004){const low=frac<=T.BAR_LOW,bl=low&&phase==='run'?0.55+0.45*Math.sin(now/55):1,ex=bx+Math.max(lw,bw*frac),c=low?'#ff4d4d':'#8fe0ff';
+    ctx.globalAlpha=al*bl;ctx.fillStyle=c;ctx.shadowColor=c;ctx.shadowBlur=12;ctx.fillRect(bx+1,my-lw/2,ex-bx-1,lw);
+    ctx.fillStyle='#ffffff';ctx.fillRect(ex-2,my-bh/2,2,bh);ctx.shadowBlur=0;ctx.globalAlpha=al;}   // 끝에 밝은 머리
+  ctx.font=`700 17px ${UI54.FNUM}`;ctx.textAlign='right';ctx.textBaseline='middle';
+  const fail=G.hits/n<TUNE49.GATE&&phase!=='run';ctx.fillStyle=fail?'#ff8a8a':'#dcf1ff';ctx.shadowColor=fail?'#ff4d4d':`rgba(${UI54.FRAME},.9)`;ctx.shadowBlur=8;
+  ctx.fillText(G.hits+'/'+n,PN.x+PN.w-T.PANEL_PAD,my+1);ctx.shadowBlur=0;ctx.textBaseline='alphabetic';   // v4.7: 맞힌 수
   ctx.globalAlpha=1;}
 // v4.12 실루엣 타이밍: 주사위 8 꼭짓점을 화면에 투영한 볼록 껍질(현재 회전을 따라감) → 크게 겹쳐 있다가 주사위 크기로 줄어듦
 function dieHull(d){const P=[],h=0.52;for(const a of[-h,h])for(const b of[-h,h])for(const c of[-h,h]){const r=qRot(d.q,[a,b,c]);P.push(proj([d.pos[0]+r[0],d.pos[1]+r[1],d.pos[2]+r[2]]));}
@@ -1735,12 +1886,38 @@ pad.addEventListener('pointerdown',e=>{const b=e.target.closest('[data-k]');if(!
 $('#ui').addEventListener('pointerdown',e=>{const b=e.target.closest('[data-d]');if(!b||!(phase==='idle'||phase==='done'))return;
   diff=b.dataset.d;document.querySelectorAll('#ui button').forEach(x=>x.classList.toggle('on',x===b));
   if(phase==='done'){resetIdle();phase='idle';G=null;tension=0;cam.zoomT=1;pad.classList.remove('off');setWord('탭 또는 아무 방향키로 시작','small');setHint('');}});
-$('#mute').addEventListener('pointerdown',()=>{unlockAudio();muted=!muted;$('#mute').textContent=muted?'🔇':'🔊';});
+$('#mute').addEventListener('pointerdown',()=>{unlockAudio();muted=!muted;muteIcon();});
 $('#side').addEventListener('pointerdown',e=>{const b=e.target.closest('[data-s]');if(!b||!(phase==='idle'||phase==='done'))return;   // v4.6 공격/방어
   SIDE=b.dataset.s;document.querySelectorAll('#side button').forEach(x=>x.classList.toggle('on',x===b));FOE=null;
   if(phase==='done'){resetIdle();phase='idle';G=null;tension=0;cam.zoomT=1;pad.classList.remove('off');setWord('탭 또는 아무 방향키로 시작','small');setHint('');}
   showFoe();});
-$('#gear').addEventListener('pointerdown',()=>{panel.hidden=!panel.hidden;});
+$('#gear').addEventListener('pointerdown',()=>{panel.hidden=!panel.hidden;$('#gear').classList.toggle('on',!panel.hidden);});
+// ================= v5.4 콘솔 UI: 소리 아이콘 · 물리 버튼 눌림 + 철컥 =================
+const ICON54={on:'<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>',
+  off:'<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>'};
+function muteIcon(){$('#mute .hf').innerHTML=muted?ICON54.off:ICON54.on;}muteIcon();
+// 018 카세트 버튼 "철컥" — UIDiorama 023 js/sfx.js:102-119 SYN.clack/release 를 이 파일의 AC·MASTER·NOISE 위에 옮김 (Web Audio 합성, 외부 파일 없음)
+const CLK=(()=>{let bus=null;
+  function out(){if(!bus){bus=AC.createGain();bus.gain.value=UI54.CLACK_VOL;bus.connect(MASTER);}return bus;}
+  function env(g,t,pk,atk,dec){g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(pk,t+atk);g.gain.exponentialRampToValueAtTime(0.0001,t+atk+dec);}
+  function nz(t,o){const type=o.type||'bandpass',atk=o.atk||0.001,dec=o.dec||0.02,s=AC.createBufferSource(),bq=AC.createBiquadFilter(),g=AC.createGain();s.buffer=NOISE;
+    bq.type=type;bq.frequency.setValueAtTime(o.f,t);bq.Q.value=o.q||1;if(o.f2)bq.frequency.exponentialRampToValueAtTime(o.f2,t+atk+dec);env(g,t,o.peak,atk,dec);
+    s.connect(bq);bq.connect(g);g.connect(out());s.start(t,Math.random()*0.5);s.stop(t+atk+dec+0.02);}
+  function tn(t,o){const atk=o.atk||0.001,dec=o.dec||0.05,osc=AC.createOscillator(),g=AC.createGain();osc.type=o.type||'sine';osc.frequency.setValueAtTime(o.f,t);
+    if(o.f2)osc.frequency.exponentialRampToValueAtTime(o.f2,t+(o.glide||atk+dec));env(g,t,o.peak,atk,dec);osc.connect(g);g.connect(out());osc.start(t);osc.stop(t+atk+dec+0.02);}
+  const can=()=>AC&&MASTER&&NOISE&&!muted;
+  return{clack(){if(!can())return;const t=AC.currentTime+0.005,p=1+(Math.random()-0.5)*0.08,v=0.9+Math.random()*0.2,r=Math.random;
+      nz(t,{f:4300*p,q:1.4,peak:0.8*v,dec:0.01});nz(t+0.006,{type:'highpass',f:2500*p,q:0.7,peak:0.25*v,dec:0.008});tn(t,{f:2950*p,peak:0.06*v,dec:0.012});   // ① 버튼 머리 딸깍
+      const t2=t+0.028+r()*0.004;nz(t2,{f:1400*p,q:1.2,peak:0.55*v,dec:0.022,f2:900*p});   // ② 28ms 뒤 걸쇠 '척'
+      [[1780,9],[2930,12],[4410,14],[6150,16]].forEach(([f,q])=>nz(t2,{f:f*p,q,peak:0.9*v,dec:0.035}));
+      tn(t2,{f:180*p,f2:110*p,peak:0.1*v,atk:0.002,dec:0.03,glide:0.03});nz(t2+0.042+r()*0.01,{f:3100*p,q:3,peak:0.14*v,dec:0.008});},   // ③ 작은 덜컹
+    release(){if(!can())return;const t=AC.currentTime+0.005,p=1+(Math.random()-0.5)*0.08,v=0.9+Math.random()*0.2;
+      nz(t,{f:2700*p,q:2,peak:0.22*v,dec:0.01});tn(t+0.004,{f:3150*p,peak:0.035*v,dec:0.03});nz(t+0.022,{f:1500*p,q:3,peak:0.08*v,dec:0.012});}};})();
+// 누르면 두께만큼 내려감(.press) + 철컥, 떼면 올라옴 + 풀림 소리. 방향 버튼(#pad)은 입력 소리를 그대로 두고 눌림만
+document.querySelectorAll('#ui button,#panel .seg button,#again,#mute,#gear,#pad button').forEach(b=>{const quiet=!!b.closest('#pad');
+  b.addEventListener('pointerdown',()=>{unlockAudio();b.classList.add('press');if(!quiet)CLK.clack();});
+  const up=()=>{if(!b.classList.contains('press'))return;b.classList.remove('press');if(!quiet)CLK.release();};
+  b.addEventListener('pointerup',up);b.addEventListener('pointercancel',up);b.addEventListener('pointerleave',up);});
 function updNote(){$('#pv').textContent=OPT.P+'%';$('#pnote').textContent=`성공 = ${OPT.P/2}% · 전원 완벽 = ${Math.min(100,OPT.P+TUNE4.ALL_PERFECT_BONUS)}%`;}
 $('#pP').addEventListener('input',e=>{OPT.P=+e.target.value;updNote();});
 document.querySelectorAll('#panel .seg').forEach(seg=>seg.addEventListener('pointerdown',e=>{const b=e.target.closest('button');if(!b)return;
@@ -1791,7 +1968,7 @@ function at(ms,fn){BT.q.push({at:BT.t+ms,fn});}
 function btBand(t,cls){const b=$('#band');b.textContent=t;b.className='';void b.offsetWidth;b.className=(cls||'')+' show';}
 function btCamK(){const u=clamp(BT.camL==null?1:BT.camL,0,1);return u*u*(3-2*u);}   // 0 = v4.12 주사위 카메라, 1 = 대치 카메라
 function btCamGo(to){BT.camTo=to;}
-function btCamStep(rdt){const want=(BT.st==='atkIn'||BT.st==='defIn')?(seq3?0:1):(BT.camTo==null?1:BT.camTo),d=rdt*1000/TUNE60.CAM_MS;   // 입력 중(주사위가 나온 뒤)만 주사위 중심
+function btCamStep(rdt){const want=(BT.st==='atkIn'||BT.st==='defIn')?(seq3?0:1):(BT.camTo==null?1:BT.camTo),d=rdt*1000/((CAM53.ON&&want<BT.camL)?CAM53.IN_MS:TUNE60.CAM_MS);   // 입력 중(주사위가 나온 뒤)만 주사위 중심 · v5.3: 대치 → 주사위는 IN_MS로 빠르게(던진 주사위를 놓치지 않게)
   if(BT.camL==null)BT.camL=1;BT.camL+=clamp(want-BT.camL,-d,d);}
 window.btCamK=btCamK;window.btView=()=>[TUNE60.VIEW.eye,TUNE60.VIEW.at];
 const easeOB=k=>{const c=1.7;return 1+(c+1)*Math.pow(k-1,3)+c*Math.pow(k-1,2);};
@@ -2024,8 +2201,13 @@ window.btUpdate=function(rdt,now){BT.t+=now<hitstopUntil?0:rdt*1000;btCamStep(rd
   if(DEBUG&&((BT.dbgN=(BT.dbgN||0)+1)%8===0))btDbg();};
 window.btDraw=function(now){const T=TUNE60;ctx.save();
   for(const w of ['me','foe']){const p=PC[w],hp=BT.hp[w],mx=HP0[w],q=proj(headPt(w)),[cw,ch,g]=T.HP_CELL,tw=mx*cw+(mx-1)*g,x0=q[0]-tw/2,y0=q[1]-ch-6;   // 체력 칸
-    const lag=clamp((BT.t-p.hpLagT-260)/380,0,1);ctx.globalAlpha=p.ko>0.5?0.45:1;ctx.fillStyle='rgba(5,6,10,.72)';rr(x0-3,y0-3,tw+6,ch+6,4);ctx.fill();
-    for(let i=0;i<mx;i++){ctx.fillStyle=i<hp?(w==='me'?'#7ee0a8':'#ff6a55'):(i<p.hpW&&lag<1?`rgba(255,255,255,${0.95*(1-lag)})`:'rgba(255,255,255,.10)');ctx.fillRect(x0+i*(cw+g),y0,cw,ch);}}
+    const lag=clamp((BT.t-p.hpLagT-260)/380,0,1);ctx.globalAlpha=p.ko>0.5?0.45:1;
+    holoPlate(x0-4,y0-4,tw+8,ch+8,{r:2,bl:5,blw:1.5,glow:5,noScan:1,fill:'rgba(4,12,20,.78)'});   // v5.4: 홀로그램 칸 게이지
+    const col=w==='me'?'126,224,168':'255,106,85';
+    for(let i=0;i<mx;i++){const X=x0+i*(cw+g);
+      if(i<hp){ctx.fillStyle=`rgb(${col})`;ctx.shadowColor=`rgba(${col},.85)`;ctx.shadowBlur=6;ctx.fillRect(X,y0,cw,ch);ctx.shadowBlur=0;ctx.fillStyle='rgba(255,255,255,.35)';ctx.fillRect(X,y0,cw,1.5);}   // 발광 칸 + 윗면 밝은 선
+      else if(i<p.hpW&&lag<1){ctx.fillStyle=`rgba(255,255,255,${0.95*(1-lag)})`;ctx.fillRect(X,y0,cw,ch);}   // 피격 잔상(유지)
+      else{ctx.strokeStyle=`rgba(${UI54.FRAME},.35)`;ctx.lineWidth=1;ctx.strokeRect(X+0.5,y0+0.5,cw-1,ch-1);}}}   // 빈 칸 = 가는 발광 선만
   ctx.globalAlpha=1;
   for(const tk of [...BT.atk,...BT.sh]){if(tk.st==='gone')continue;const [x,y,u]=tokPos(tk);let a=1,sc=tk.grow!=null?Math.max(0.01,easeOB(clamp((BT.t-tk.grow)/240,0,1))):1;
     if(tk.fade!=null){a=1-clamp((BT.t-tk.fade)/300,0,1);if(a<=0){tk.st='gone';continue;}sc*=0.7+0.3*a;}
@@ -2034,7 +2216,8 @@ window.btDraw=function(now){const T=TUNE60;ctx.save();
     ctx.globalAlpha=a;drawToken(x,y,tk,sc*(tk.trail?0.85:1),now);ctx.globalAlpha=1;}
   ctx.textAlign='center';ctx.textBaseline='middle';
   for(const n of BT.nums){const u=(BT.t-n.t0)/T.NUM_MS;if(u>1||u<0)continue;const sz=(n.crit?T.NUM_PX[1]:T.NUM_PX[0])*(u<0.12?1+(0.12-u)*5:1),y=n.y-(n.crit?30:40)*Math.sqrt(u);
-    ctx.globalAlpha=u>0.7?(1-u)/0.3:1;ctx.font=`900 ${sz}px system-ui,sans-serif`;ctx.lineWidth=5;ctx.strokeStyle='rgba(0,0,0,.85)';ctx.strokeText(n.txt,n.x,y);
+    ctx.globalAlpha=u>0.7?(1-u)/0.3:1;ctx.font=`900 ${sz}px system-ui,sans-serif`;ctx.lineJoin='round';ctx.lineWidth=6;ctx.strokeStyle='rgba(3,10,18,.92)';ctx.strokeText(n.txt,n.x,y);   // v5.4: 외곽선만 콘솔 톤(짙은 남색 + 가는 푸른 테)
+    ctx.lineWidth=1.5;ctx.strokeStyle=`rgba(${UI54.FRAME},.8)`;ctx.strokeText(n.txt,n.x,y);
     if(n.crit){ctx.shadowColor='#ffb020';ctx.shadowBlur=18;}ctx.fillStyle=n.crit?'#ffd34a':'#ffffff';ctx.fillText(n.txt,n.x,y);ctx.shadowBlur=0;}
   BT.nums=BT.nums.filter(n=>BT.t-n.t0<T.NUM_MS);ctx.restore();};
 function btDbg(){const e=$('#dbg'),c=BT.cur;e.hidden=false;
